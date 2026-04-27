@@ -1,0 +1,190 @@
+import { useCallback, useMemo } from 'react'
+import { useGetMyPermissionsQuery } from '../app/api/apiSlice'
+import { useAppSelector } from '../app/hooks'
+import {
+  FINANCIAL_REPORT_CORE_PATHS,
+  FINANCIAL_REPORT_LEGACY_CORE_ROUTES,
+  FINANCIAL_REPORT_PATH_TO_LEGACY,
+} from '../lib/financialReportRoutes'
+import { permissionRouteMatches } from '../lib/permissionRoutes'
+
+function splitTo(to: string): { pathname: string; search: string } {
+  const q = to.indexOf('?')
+  if (q === -1) return { pathname: to, search: '' }
+  return { pathname: to.slice(0, q), search: to.slice(q) }
+}
+
+function exactRouteMatches(pathname: string, search: string, allowedRoute: string): boolean {
+  const r = allowedRoute.trim()
+  if (!r) return false
+  const q = r.indexOf('?')
+  if (q === -1) return pathname === r
+  if (pathname !== r.slice(0, q)) return false
+  const want = new URLSearchParams(r.slice(q + 1))
+  const have = new URLSearchParams(search)
+  for (const [k, v] of want.entries()) {
+    if (have.get(k) !== v) return false
+  }
+  return true
+}
+
+function setHasAnyRoute(set: Set<string>, routes: readonly string[]): boolean {
+  return routes.some((route) => set.has(route))
+}
+
+/** Daily cash flow: explicit permission, or any other financial report (new or legacy). */
+function hasFinancialPermissionForDailyCashFlow(set: Set<string>): boolean {
+  if (set.has('/financial-reports/daily-cash-flow')) return true
+  if (set.has('/reports/financial?kind=daily-cash-flow')) return true
+  if (setHasAnyRoute(set, FINANCIAL_REPORT_CORE_PATHS)) return true
+  if (setHasAnyRoute(set, FINANCIAL_REPORT_LEGACY_CORE_ROUTES)) return true
+  return false
+}
+
+/** User can open `pathname` if they have the new path permission or the legacy ?kind= row. */
+function financialPathAllowedByModernOrLegacy(
+  pathname: string,
+  search: string,
+  set: Set<string>,
+): boolean {
+  for (const r of set) {
+    if (permissionRouteMatches(pathname, search, r)) return true
+  }
+  const legacy = FINANCIAL_REPORT_PATH_TO_LEGACY[pathname]
+  if (legacy && set.has(legacy)) return true
+  return false
+}
+
+function financialLinkAllowedByModernOrLegacy(pathname: string, search: string, set: Set<string>): boolean {
+  for (const r of set) {
+    if (exactRouteMatches(pathname, search, r)) return true
+  }
+  const legacy = FINANCIAL_REPORT_PATH_TO_LEGACY[pathname]
+  if (legacy) {
+    const { pathname: lp, search: ls } = splitTo(legacy)
+    for (const r of set) {
+      if (exactRouteMatches(lp, ls, r)) return true
+    }
+  }
+  return false
+}
+
+/** Legacy URL: `/reports/financial?kind=…` — allow if DB has new path or old query row. */
+function legacyFinancialQueryAllowed(pathname: string, search: string, set: Set<string>): boolean {
+  if (pathname !== '/reports/financial') return false
+  for (const r of set) {
+    if (permissionRouteMatches(pathname, search, r)) return true
+  }
+  const kind = new URLSearchParams(search).get('kind')
+  if (!kind) return false
+  const modernPath =
+    kind === 'trial'
+      ? '/financial-reports/trial-balance'
+      : kind === 'ledger'
+        ? '/financial-reports/general-ledger'
+        : kind === 'pl'
+          ? '/financial-reports/profit-and-loss'
+          : kind === 'bs'
+            ? '/financial-reports/balance-sheet'
+            : kind === 'customer'
+              ? '/financial-reports/customer-balances'
+              : kind === 'supplier'
+                ? '/financial-reports/supplier-balances'
+                : kind === 'daily-cash-flow'
+                  ? '/financial-reports/daily-cash-flow'
+                  : null
+  if (modernPath && set.has(modernPath)) return true
+  if (kind === 'daily-cash-flow') return hasFinancialPermissionForDailyCashFlow(set)
+  return false
+}
+
+/** Only SuperAdmin bypasses permission rows. */
+function bypassPermissionNav(role: string | null): boolean {
+  return role === 'SuperAdmin'
+}
+
+export function useNavAccess() {
+  const token = useAppSelector((s) => s.auth.token)
+  const role = useAppSelector((s) => s.auth.role)
+  const bypass = bypassPermissionNav(role)
+  const skip = !token || bypass
+
+  const q = useGetMyPermissionsQuery(undefined, { skip })
+
+  const navSettled = skip || q.isSuccess || q.isError
+  const fullAccess = bypass || (q.data?.fullAccess ?? false)
+
+  const allowedViewRoutes = useMemo(() => {
+    if (fullAccess) return null as Set<string> | null
+    const set = new Set<string>()
+    for (const i of q.data?.items ?? []) {
+      if (i.canView && i.route) set.add(i.route.trim())
+    }
+    return set
+  }, [fullAccess, q.data?.items])
+
+  /** Metrics dashboard at `/`; home route stays allowed for everyone, but UI shows a welcome screen without this. */
+  const canViewDashboard = useMemo(() => {
+    if (fullAccess) return true
+    return allowedViewRoutes?.has('/') ?? false
+  }, [fullAccess, allowedViewRoutes])
+
+  const hasAnyPermission = useMemo(() => {
+    if (fullAccess) return true
+    return (allowedViewRoutes?.size ?? 0) > 0
+  }, [fullAccess, allowedViewRoutes])
+
+  const pathnameAllowed = useCallback(
+    (pathname: string, search: string) => {
+      if (fullAccess) return true
+      if (pathname === '/' || pathname === '') return true
+      const set = allowedViewRoutes
+      if (!set || set.size === 0) return false
+      for (const r of set) {
+        if (permissionRouteMatches(pathname, search, r)) return true
+      }
+      if (pathname.startsWith('/financial-reports/')) {
+        if (financialPathAllowedByModernOrLegacy(pathname, search, set)) return true
+        if (pathname === '/financial-reports/daily-cash-flow') {
+          return hasFinancialPermissionForDailyCashFlow(set)
+        }
+      }
+      if (legacyFinancialQueryAllowed(pathname, search, set)) return true
+      return false
+    },
+    [fullAccess, allowedViewRoutes],
+  )
+
+  const linkAllowed = useCallback(
+    (to: string) => {
+      if (fullAccess) return true
+      const { pathname, search } = splitTo(to.trim())
+      const set = allowedViewRoutes
+      if (!set || set.size === 0) return false
+      for (const r of set) {
+        if (exactRouteMatches(pathname, search, r)) return true
+      }
+      if (pathname.startsWith('/financial-reports/')) {
+        if (financialLinkAllowedByModernOrLegacy(pathname, search, set)) return true
+        if (pathname === '/financial-reports/daily-cash-flow') {
+          return hasFinancialPermissionForDailyCashFlow(set)
+        }
+      }
+      if (pathname === '/reports/financial' && legacyFinancialQueryAllowed(pathname, search, set)) return true
+      return false
+    },
+    [fullAccess, allowedViewRoutes],
+  )
+
+  return {
+    bypass,
+    navSettled,
+    fullAccess,
+    allowedViewRoutes,
+    hasAnyPermission,
+    canViewDashboard,
+    pathnameAllowed,
+    linkAllowed,
+    isFetchingPermissions: !skip && q.isFetching,
+  }
+}
