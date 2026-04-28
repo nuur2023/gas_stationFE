@@ -16,6 +16,7 @@ import { DataTable, type Column } from '../../components/DataTable'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
+import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import { useDebouncedValue } from '../../lib/hooks'
 import { showBusinessPickerInForms } from '../../lib/stationContext'
 import { openPurchaseInvoicePdf } from '../../lib/purchaseInvoicePdf'
@@ -59,6 +60,7 @@ function withTrailingEmptyRow(lines: FormLine[], nextRid: () => number): FormLin
 }
 
 export function PurchasesPage() {
+  const { canView: routeCanView } = usePagePermissionActions()
   const navigate = useNavigate()
   const lineRidRef = useRef(0)
   const nextLineRid = () => {
@@ -360,13 +362,22 @@ export function PurchasesPage() {
         }}
         renderExtraRowActions={(row) => (
           <>
-            <Link
-              to={`/purchases/${row.id}`}
-              className="mr-1 inline-flex rounded p-1.5 text-slate-600 hover:bg-slate-100"
-              title="View line items"
-            >
-              <Eye className="h-4 w-4" />
-            </Link>
+            {routeCanView ? (
+              <Link
+                to={`/purchases/${row.id}`}
+                className="mr-1 inline-flex rounded p-1.5 text-slate-600 hover:bg-slate-100"
+                title="View line items"
+              >
+                <Eye className="h-4 w-4" />
+              </Link>
+            ) : (
+              <span
+                className="mr-1 inline-flex cursor-not-allowed rounded p-1.5 text-slate-400 opacity-50"
+                title="No view permission"
+              >
+                <Eye className="h-4 w-4" />
+              </span>
+            )}
             <button
               type="button"
               onClick={() => void handlePrintInvoice(row)}
@@ -384,7 +395,7 @@ export function PurchasesPage() {
         title={editing ? 'Edit purchase' : 'Add purchase'}
         onClose={() => !saving && setOpen(false)}
         className={
-          editing ? 'max-w-lg' : 'max-w-[min(60vw,85rem)]'
+          editing ? 'max-w-lg' : 'max-w-[96vw] sm:max-w-3xl'
         }
       >
         <form onSubmit={handleSave} className="space-y-4">
@@ -470,8 +481,8 @@ export function PurchasesPage() {
                   <span className="text-sm text-amber-700">Add fuel types before line items.</span>
                 )}
               </div>
-              <div className="w-full overflow-x-auto overscroll-x-contain rounded-lg border border-slate-200 [-webkit-overflow-scrolling:touch]">
-                <table className="w-full max-sm:min-w-152 divide-y divide-slate-200 text-sm">
+              <div className="max-w-full overflow-x-auto overscroll-x-contain rounded-lg border border-slate-200 [-webkit-overflow-scrolling:touch]">
+                <table className="min-w-[42rem] divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
                     <tr>
                       <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Fuel type</th>

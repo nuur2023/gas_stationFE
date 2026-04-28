@@ -167,7 +167,7 @@ export function UsersPage() {
         }
       } else {
         const passwordHash = await sha256HexUpper(password)
-        const created = await createUser({
+        await createUser({
           name,
           email: email.trim(),
           phone: phone.trim(),

@@ -23,7 +23,7 @@ export function ProtectedRoute() {
   const dispatch = useAppDispatch()
   const token = useAppSelector((s) => s.auth.token)
   const location = useLocation()
-  const { navSettled, hasAnyPermission, pathnameAllowed } = useNavAccess()
+  const { navSettled, hasAnyPermission } = useNavAccess()
   const expired = token ? tokenExpired(token) : false
 
   useEffect(() => {
@@ -55,9 +55,7 @@ export function ProtectedRoute() {
     return <Navigate to="/" replace />
   }
 
-  if (!pathnameAllowed(location.pathname, location.search)) {
-    return <Navigate to="/" replace />
-  }
+  // Disallowed view routes still render the app shell; AppLayout blurs the main area so the sidebar stays usable.
 
   return <Outlet />
 }

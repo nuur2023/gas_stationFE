@@ -72,17 +72,41 @@ function mapAll(tree: Menu[], fn: () => Flags): Record<string, Flags> {
   return o
 }
 
+function isReportPath(path: string): boolean {
+  const p = path.trim().toLowerCase()
+  return p === '/reports' || p === '/financial-reports' || p.startsWith('/reports/') || p.startsWith('/financial-reports/')
+}
+
+function isReportMenu(menu: Pick<Menu, 'route'>): boolean {
+  return isReportPath(menuPathOnly(menu))
+}
+
+function isReportSubMenu(subMenu: Pick<SubMenu, 'route'>): boolean {
+  return isReportPath(submenuPathOnly(subMenu))
+}
+
+function reportViewOnlyFlags(f: Flags): Flags {
+  return {
+    canView: f.canView,
+    canCreate: false,
+    canUpdate: false,
+    canDelete: false,
+  }
+}
+
 function flattenItems(tree: Menu[], flags: Record<string, Flags>): BulkPermissionItem[] {
   const items: BulkPermissionItem[] = []
   for (const m of tree) {
-    const mf = flags[`m:${m.id}`] ?? emptyF()
+    const mfRaw = flags[`m:${m.id}`] ?? emptyF()
+    const mf = isReportMenu(m) ? reportViewOnlyFlags(mfRaw) : mfRaw
     items.push({
       menuId: m.id,
       subMenuId: null,
       ...mf,
     })
     for (const sm of m.subMenus ?? []) {
-      const sf = flags[`s:${sm.id}`] ?? emptyF()
+      const sfRaw = flags[`s:${sm.id}`] ?? emptyF()
+      const sf = isReportSubMenu(sm) ? reportViewOnlyFlags(sfRaw) : sfRaw
       items.push({
         menuId: m.id,
         subMenuId: sm.id,
@@ -250,11 +274,12 @@ export function PermissionsPage() {
     return contextUsers.filter((u) => {
       if (authUserId != null && u.id === authUserId) return false
       const rn = (u.roleName ?? '').trim().toLowerCase()
-      if (rn === 'superadmin') return false
+      // Non–SuperAdmin actors cannot assign permissions to SuperAdmin accounts.
+      if (rn === 'superadmin' && !isSuperAdmin) return false
       if (isAdmin && rn === 'admin') return false
       return true
     })
-  }, [contextUsers, isAdmin, authUserId])
+  }, [contextUsers, isAdmin, authUserId, isSuperAdmin])
 
   useEffect(() => {
     if (effectiveBusinessId <= 0) {
@@ -287,7 +312,8 @@ export function PermissionsPage() {
     () => contextUsers.find((u) => u.id === targetUserId) ?? null,
     [contextUsers, targetUserId],
   )
-  const targetIsAdmin = (targetUserRow?.roleName ?? '').trim().toLowerCase() === 'admin'
+  const targetRoleName = (targetUserRow?.roleName ?? '').trim().toLowerCase()
+  const targetIsAdmin = targetRoleName === 'admin'
 
   const [flags, setFlags] = useState<Record<string, Flags>>({})
   const actorFlags = useMemo(
@@ -310,6 +336,13 @@ export function PermissionsPage() {
     return granted
   }, [isSuperAdmin, targetIsAdmin, tree, actorFlags, isAdmin])
 
+  /** Main setup (/setup) cannot be granted to Admin users — hide the whole card for that target. */
+  const displayGrantTree = useMemo(() => {
+    if (targetUserId == null) return grantTree
+    if (targetIsAdmin) return grantTree.filter((m) => menuPathOnly(m) !== '/setup')
+    return grantTree
+  }, [grantTree, targetUserId, targetIsAdmin])
+
   const businessOptions: SelectOption[] = useMemo(
     () => (businesses?.items ?? []).map((b) => ({ value: String(b.id), label: b.name })),
     [businesses?.items],
@@ -325,13 +358,16 @@ export function PermissionsPage() {
     [userOptions, targetUserId],
   )
 
-  const allPermissionsChecked = useMemo(() => isEverythingChecked(grantTree, flags), [grantTree, flags])
+  const allPermissionsChecked = useMemo(
+    () => isEverythingChecked(displayGrantTree, flags),
+    [displayGrantTree, flags],
+  )
 
   function setMenuAccess(menuId: number, on: boolean) {
     setFlags((prev) => {
       const next = { ...prev }
       next[`m:${menuId}`] = on ? fullF() : emptyF()
-      const menu = grantTree.find((m) => m.id === menuId)
+      const menu = displayGrantTree.find((m) => m.id === menuId)
       for (const sm of menu?.subMenus ?? []) {
         next[`s:${sm.id}`] = on ? fullF() : emptyF()
       }
@@ -344,7 +380,7 @@ export function PermissionsPage() {
       const next = { ...prev }
       next[`s:${subMenuId}`] = on ? fullF() : emptyF()
       if (on) {
-        const menu = grantTree.find((m) => (m.subMenus ?? []).some((sm) => sm.id === subMenuId))
+        const menu = displayGrantTree.find((m) => (m.subMenus ?? []).some((sm) => sm.id === subMenuId))
         if (menu) {
           const mk = `m:${menu.id}`
           const mf = next[mk] ?? emptyF()
@@ -383,24 +419,24 @@ export function PermissionsPage() {
 
   function checkAll() {
     setFlags((prev) => {
-      const patch = mapAll(grantTree, fullF)
+      const patch = mapAll(displayGrantTree, fullF)
       return { ...prev, ...patch }
     })
   }
 
   function uncheckAll() {
     setFlags((prev) => {
-      const patch = mapAll(grantTree, emptyF)
+      const patch = mapAll(displayGrantTree, emptyF)
       return { ...prev, ...patch }
     })
   }
 
   async function handleSave() {
-    if (targetUserId == null || effectiveBusinessId <= 0 || !grantTree.length) return
+    if (targetUserId == null || effectiveBusinessId <= 0 || !displayGrantTree.length) return
     await saveBulk({
       userId: targetUserId,
       businessId: effectiveBusinessId,
-      items: flattenItems(grantTree, flags),
+      items: flattenItems(displayGrantTree, flags),
     }).unwrap()
   }
 
@@ -409,7 +445,7 @@ export function PermissionsPage() {
     usersLoading ||
     (targetUserId != null && effectiveBusinessId > 0 && permsLoading)
 
-  const canSave = targetUserId != null && effectiveBusinessId > 0 && grantTree.length > 0
+  const canSave = targetUserId != null && effectiveBusinessId > 0 && displayGrantTree.length > 0
 
   return (
     <div className="space-y-4">
@@ -452,7 +488,7 @@ export function PermissionsPage() {
           <button
             type="button"
             onClick={() => (allPermissionsChecked ? uncheckAll() : checkAll())}
-            disabled={!grantTree.length}
+            disabled={!displayGrantTree.length}
             title={allPermissionsChecked ? 'Clear all permission checkboxes' : 'Select all permission checkboxes'}
             className={cn(
               'rounded-lg px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40',
@@ -495,8 +531,9 @@ export function PermissionsPage() {
       {isSuperAdmin && targetIsAdmin && (
         <p className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
           Assigning to an <strong>Admin</strong>: global setup items (charts of accounts, roles, businesses, stations,
-          menus, submenus, currencies) are hidden and cannot be granted. Business users remains available but is
-          limited to the Admin&apos;s own business scope.
+          menus, submenus, currencies) are hidden and cannot be granted. The <strong>Main setup</strong> block (users,
+          assigning station, permissions, settings) is hidden so it cannot be granted to Admin accounts. Business users
+          remains available but is limited to the Admin&apos;s own business scope.
         </p>
       )}
 
@@ -508,7 +545,7 @@ export function PermissionsPage() {
       )}
 
       <div className="space-y-4">
-        {grantTree.map((menu) => {
+        {displayGrantTree.map((menu) => {
           const mk = `m:${menu.id}`
           const mf = flags[mk] ?? emptyF()
           const subs = menu.subMenus ?? []
@@ -526,7 +563,11 @@ export function PermissionsPage() {
 
               {subs.map((sm) => {
                 const sk = `s:${sm.id}`
-                const sf = flags[sk] ?? emptyF()
+                const sfRaw = flags[sk] ?? emptyF()
+                const sf = isReportSubMenu(sm) ? reportViewOnlyFlags(sfRaw) : sfRaw
+                const allowedFields = isReportSubMenu(sm)
+                  ? (['canView'] as const)
+                  : (['canView', 'canCreate', 'canUpdate', 'canDelete'] as const)
                 return (
                   <div key={sm.id} className="mb-4 ml-7 rounded-xl border border-slate-200 bg-white p-4">
                     <label className="mb-3 flex cursor-pointer items-center gap-3 text-xl font-medium text-slate-900">
@@ -541,7 +582,7 @@ export function PermissionsPage() {
 
                     <div className="ml-8 rounded-xl bg-slate-100 px-4 py-3">
                       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                        {(['canView', 'canCreate', 'canUpdate', 'canDelete'] as const).map((field) => (
+                        {allowedFields.map((field) => (
                           <label key={field} className="flex cursor-pointer items-center gap-2 text-base text-slate-800">
                             <input
                               type="checkbox"
@@ -570,7 +611,10 @@ export function PermissionsPage() {
                 <div className="mb-4 ml-7 rounded-xl border border-slate-200 bg-white p-4">
                   <div className="ml-8 rounded-xl bg-slate-100 px-4 py-3">
                     <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                      {(['canView', 'canCreate', 'canUpdate', 'canDelete'] as const).map((field) => (
+                      {(isReportMenu(menu)
+                        ? (['canView'] as const)
+                        : (['canView', 'canCreate', 'canUpdate', 'canDelete'] as const)
+                      ).map((field) => (
                         <label key={field} className="flex cursor-pointer items-center gap-2 text-base text-slate-800">
                           <input
                             type="checkbox"
@@ -598,7 +642,7 @@ export function PermissionsPage() {
         })}
       </div>
 
-      {!loading && !grantTree.length && (
+      {!loading && !displayGrantTree.length && (
         <p className="text-sm text-slate-500">No menus found. Add menus under Setup → Menus.</p>
       )}
     </div>

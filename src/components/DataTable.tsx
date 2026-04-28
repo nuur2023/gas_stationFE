@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, Search, Trash2, Pencil } from 'lucide-react'
+import { usePagePermissionActions } from '../hooks/usePagePermissionActions'
 import { cn } from '../lib/cn'
 
 const PAGE_SIZES = [10, 20, 30, 50, 100] as const
@@ -61,6 +62,8 @@ interface DataTableProps<T extends { id: number }> {
   /** Rendered after the table, before the pagination bar (e.g. totals). */
   belowTable?: React.ReactNode
   rowClassName?: (row: T) => string | undefined
+  /** Overrides Create/Update/Delete flags from the current route (for nested tables, tests, etc.). */
+  tableActionPermissions?: { canCreate: boolean; canUpdate: boolean; canDelete: boolean }
 }
 
 export function DataTable<T extends { id: number }>({
@@ -91,7 +94,13 @@ export function DataTable<T extends { id: number }>({
   extraToolbar,
   belowTable,
   rowClassName,
+  tableActionPermissions,
 }: DataTableProps<T>) {
+  const routePerm = usePagePermissionActions()
+  const canCreate = tableActionPermissions?.canCreate ?? routePerm.canCreate
+  const canUpdate = tableActionPermissions?.canUpdate ?? routePerm.canUpdate
+  const canDelete = tableActionPermissions?.canDelete ?? routePerm.canDelete
+
   const rowSelectionEnabled = showRowSelection ?? !readOnly
   const rowActionsEnabled = showRowActions ?? !readOnly
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
@@ -151,8 +160,10 @@ export function DataTable<T extends { id: number }>({
           {!readOnly && rowSelectionEnabled && selectedIds.size > 0 && (
             <button
               type="button"
+              disabled={!canDelete}
+              title={!canDelete ? 'No delete permission' : undefined}
               onClick={onDeleteSelected}
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Trash2 className="h-4 w-4" />
               Delete ({selectedIds.size})
@@ -161,8 +172,10 @@ export function DataTable<T extends { id: number }>({
           {!readOnly && onAdd != null && (
             <button
               type="button"
+              disabled={!canCreate}
+              title={!canCreate ? 'No create permission' : undefined}
               onClick={onAdd}
-              className="inline-flex w-full shrink-0 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-700 sm:w-auto"
+              className="inline-flex w-full shrink-0 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
             >
               {addLabel}
             </button>
@@ -178,12 +191,14 @@ export function DataTable<T extends { id: number }>({
                 <th className="w-10 px-3 py-3 text-center">
                   <input
                     type="checkbox"
+                    disabled={!canDelete}
+                    title={!canDelete ? 'No delete permission' : undefined}
                     checked={allOnPageSelected}
                     ref={(el) => {
                       if (el) el.indeterminate = !allOnPageSelected && someSelected
                     }}
                     onChange={toggleAllOnPage}
-                    className="rounded border-slate-300"
+                    className="rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
                   />
                 </th>
               )}
@@ -231,9 +246,11 @@ export function DataTable<T extends { id: number }>({
                     <td className="px-3 py-2 text-center">
                       <input
                         type="checkbox"
+                        disabled={!canDelete}
+                        title={!canDelete ? 'No delete permission' : undefined}
                         checked={selectedIds.has(row.id)}
                         onChange={() => toggleRow(row.id)}
-                        className="rounded border-slate-300"
+                        className="rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
                       />
                     </td>
                   )}
@@ -251,18 +268,20 @@ export function DataTable<T extends { id: number }>({
                       {onEditRow != null && (
                         <button
                           type="button"
+                          disabled={!canUpdate}
+                          title={!canUpdate ? 'No update permission' : editRowTitle}
                           onClick={() => onEditRow(row)}
-                          className="mr-1 inline-flex rounded p-1.5 text-slate-600 hover:bg-slate-100"
-                          title={editRowTitle}
+                          className="mr-1 inline-flex rounded p-1.5 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
                       )}
                       <button
                         type="button"
+                        disabled={!canDelete}
+                        title={!canDelete ? 'No delete permission' : 'Delete'}
                         onClick={() => onDeleteOne(row.id)}
-                        className="inline-flex rounded p-1.5 text-red-600 hover:bg-red-50"
-                        title="Delete"
+                        className="inline-flex rounded p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

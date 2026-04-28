@@ -1207,8 +1207,8 @@ export function GeneralDailyReportPage() {
             Include in PDF
           </label>
         </div>
-        <div className="overflow-x-auto overscroll-x-contain">
-        <table className="min-w-[760px] w-max divide-y divide-slate-200 text-sm">
+        <div className="max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+        <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-2 text-left font-semibold text-slate-700">Type fuel</th>
@@ -1251,8 +1251,8 @@ export function GeneralDailyReportPage() {
             Include in PDF
           </label>
         </div>
-        <div className="overflow-x-auto overscroll-x-contain">
-        <table className="min-w-[980px] w-max divide-y divide-slate-200 text-sm">
+        <div className="max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+        <table className="min-w-[980px] divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-2 text-left font-semibold text-slate-700">Date</th>
@@ -1316,8 +1316,8 @@ export function GeneralDailyReportPage() {
             Include in PDF
           </label>
         </div>
-        <div className="overflow-x-auto overscroll-x-contain">
-        <table className="min-w-[760px] w-max divide-y divide-slate-200 text-sm">
+        <div className="max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+        <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-2 text-left font-semibold text-slate-700">Date</th>
@@ -1372,8 +1372,8 @@ export function GeneralDailyReportPage() {
             Include in PDF
           </label>
         </div>
-        <div className="overflow-x-auto overscroll-x-contain">
-        <table className="min-w-[760px] w-max divide-y divide-slate-200 text-sm">
+        <div className="max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+        <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-2 text-left font-semibold text-slate-700">Name</th>

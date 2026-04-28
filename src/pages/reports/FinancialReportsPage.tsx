@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { useAppSelector } from '../../app/hooks'
 import {
@@ -21,6 +23,7 @@ import {
   filterAccountsForViewer,
   filterBusinessLeafAccounts,
 } from '../../lib/accountScope'
+import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import {
   adminNeedsSettingsStation,
   SETTINGS_STATION_HINT,
@@ -76,6 +79,47 @@ function formatReportPeriod(from: string, to: string): string {
   }
 }
 
+function openPdfInNewTab(doc: jsPDF) {
+  const url = doc.output('bloburl')
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+function buildSimpleReportPdf(
+  title: string,
+  periodLabel: string,
+  head: string[],
+  body: Array<Array<string | number>>,
+) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+  const pageW = doc.internal.pageSize.getWidth()
+  const margin = 40
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.text(title, margin, 42)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.text(periodLabel || 'All periods', margin, 58)
+
+  autoTable(doc, {
+    startY: 72,
+    head: [head],
+    body,
+    styles: { fontSize: 9, cellPadding: 4, textColor: [31, 41, 55] },
+    headStyles: { fillColor: [241, 245, 249], textColor: [31, 41, 55], fontStyle: 'bold' },
+    theme: 'grid',
+    margin: { left: margin, right: margin, bottom: 40 },
+    didDrawPage: ({ pageNumber }) => {
+      const pageH = doc.internal.pageSize.getHeight()
+      doc.setFontSize(9)
+      doc.setTextColor(100, 116, 139)
+      doc.text(`Page ${pageNumber}`, pageW - margin, pageH - 16, { align: 'right' })
+    },
+  })
+
+  openPdfInNewTab(doc)
+}
+
 interface TrialBalanceRow {
   id: number
   code: string
@@ -98,6 +142,7 @@ interface CustomerBalanceRow {
 export function FinancialReportsPage() {
   const location = useLocation()
   const [searchParams] = useSearchParams()
+  const { canView: routeCanView } = usePagePermissionActions()
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessIdRaw = useAppSelector((s) => s.auth.businessId)
   const authBusinessId = authBusinessIdRaw ?? 0
@@ -127,6 +172,7 @@ export function FinancialReportsPage() {
 
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [bsAsOf, setBsAsOf] = useState('')
   const [trialBusinessId, setTrialBusinessId] = useState<number | null>(null)
   const [trialStationId, setTrialStationId] = useState<number | null>(null)
   const [trialPage, setTrialPage] = useState(1)
@@ -336,7 +382,7 @@ export function FinancialReportsPage() {
   const bs = useGetBalanceSheetReportQuery(
     {
       businessId: effectiveBsBusinessId,
-      to: to || undefined,
+      to: bsAsOf || undefined,
       stationId: reportStationId(bsStationId),
     },
     { skip: kind !== 'bs' || effectiveBsBusinessId <= 0 || needsReportStation },
@@ -485,7 +531,7 @@ export function FinancialReportsPage() {
   }, [trialRowsFiltered])
 
   const plPeriodLabel = formatReportPeriod(from, to)
-  const bsPeriodLabel = formatReportPeriod('', to)
+  const bsPeriodLabel = formatReportPeriod('', bsAsOf)
   const ledgerRows = useMemo(() => {
     let running = 0
     const rows = (ledger.data ?? []).map((r: any, i: number) => {
@@ -660,6 +706,152 @@ export function FinancialReportsPage() {
 
   const supplierCols: Column<CustomerBalanceRow>[] = customerCols
 
+  useEffect(() => {
+    if (kind !== 'customer') return
+    if (!routeCanView || needsReportStation || effectiveCustomerBusinessId <= 0 || !customerReceivableAccountId) {
+      setCustomerApplied(null)
+      return
+    }
+    setCustomerApplied({
+      businessId: effectiveCustomerBusinessId,
+      stationId: reportStationId(customerStationId),
+      from: customerFrom.trim() || undefined,
+      to: customerTo.trim() || undefined,
+      receivableAccountId: customerReceivableAccountId,
+    })
+    setCustomerPage(1)
+  }, [
+    kind,
+    routeCanView,
+    needsReportStation,
+    effectiveCustomerBusinessId,
+    customerReceivableAccountId,
+    customerStationId,
+    customerFrom,
+    customerTo,
+  ])
+
+  useEffect(() => {
+    if (kind !== 'supplier') return
+    if (!routeCanView || needsReportStation || effectiveSupplierBusinessId <= 0 || !supplierPayableAccountId) {
+      setSupplierApplied(null)
+      return
+    }
+    setSupplierApplied({
+      businessId: effectiveSupplierBusinessId,
+      stationId: reportStationId(supplierStationId),
+      from: supplierFrom.trim() || undefined,
+      to: supplierTo.trim() || undefined,
+      payableAccountId: supplierPayableAccountId,
+    })
+    setSupplierPage(1)
+  }, [
+    kind,
+    routeCanView,
+    needsReportStation,
+    effectiveSupplierBusinessId,
+    supplierPayableAccountId,
+    supplierStationId,
+    supplierFrom,
+    supplierTo,
+  ])
+
+  const handleLedgerExport = () => {
+    if (ledgerRows.length === 0) return
+    buildSimpleReportPdf(
+      'General Ledger',
+      formatReportPeriod(from, to),
+      ['Date', 'Description', 'Debit', 'Credit', 'Balance'],
+      ledgerRows.map((r) => [
+        r.date ? new Date(r.date).toLocaleDateString() : '—',
+        r.description,
+        r.debit === 0 ? '' : formatDecimal(r.debit),
+        r.credit === 0 ? '' : formatDecimal(r.credit),
+        formatDecimal(r.balance),
+      ]),
+    )
+  }
+
+  const handleTrialExport = () => {
+    if (trialRowsFiltered.length === 0) return
+    buildSimpleReportPdf(
+      'Trial Balance',
+      formatReportPeriod(from, to),
+      ['Code', 'Name', 'Debit', 'Credit', 'Balance'],
+      trialRowsFiltered.map((r) => [r.code, r.name, formatDecimal(r.debit), formatDecimal(r.credit), formatDecimal(r.balance)]),
+    )
+  }
+
+  const handleDailyCashFlowExport = () => {
+    if (dailyCashFlowRows.length === 0) return
+    buildSimpleReportPdf(
+      'Daily Cash Flow Report',
+      formatReportPeriod(from, to),
+      ['Date', 'Debit total', 'Credit total', 'Net', 'Cumulative'],
+      dailyCashFlowRows.map((r) => [
+        r.dateLabel,
+        formatDecimal(r.totalDebit),
+        formatDecimal(r.totalCredit),
+        formatDecimal(r.netMovement),
+        formatDecimal(r.endingBalance),
+      ]),
+    )
+  }
+
+  const handleProfitLossExport = () => {
+    if (!pl.data) return
+    const body: Array<Array<string | number>> = []
+    body.push(['Income', '', ''])
+    for (const row of pl.data.incomeAccounts ?? []) body.push([`${row.code} - ${row.name}`, formatDecimal(row.amount), ''])
+    body.push(['Total income', formatDecimal(pl.data.incomeTotal ?? 0), ''])
+    body.push(['COGS', '', ''])
+    for (const row of pl.data.cogsAccounts ?? []) body.push([`${row.code} - ${row.name}`, formatDecimal(row.amount), ''])
+    body.push(['Total COGS', formatDecimal(pl.data.cogsTotal ?? 0), ''])
+    body.push(['Gross profit', formatDecimal(pl.data.grossProfit ?? 0), ''])
+    body.push(['Expense', '', ''])
+    for (const row of pl.data.expenseAccounts ?? []) body.push([`${row.code} - ${row.name}`, formatDecimal(row.amount), ''])
+    body.push(['Total expense', formatDecimal(pl.data.expenseTotal ?? 0), ''])
+    body.push(['Net ordinary income', formatDecimal(pl.data.netOrdinaryIncome ?? 0), ''])
+    body.push(['Net income', formatDecimal(pl.data.netIncome ?? 0), ''])
+    buildSimpleReportPdf('Profit & Loss', plPeriodLabel, ['Line', 'Amount', ''], body)
+  }
+
+  const handleBalanceSheetExport = () => {
+    if (!bs.data) return
+    const body: Array<Array<string | number>> = []
+    body.push(['Assets', ''])
+    for (const row of bs.data.assetAccounts ?? []) body.push([`${row.code} - ${row.name}`, formatDecimal(row.balance)])
+    body.push(['Total assets', formatDecimal(bs.data.assets ?? 0)])
+    body.push(['Liabilities', ''])
+    for (const row of bs.data.liabilityAccounts ?? []) body.push([`${row.code} - ${row.name}`, formatDecimal(row.balance)])
+    body.push(['Total liabilities', formatDecimal(bs.data.liabilities ?? 0)])
+    body.push(['Equity', ''])
+    for (const row of bs.data.equityAccounts ?? []) body.push([`${row.code} - ${row.name}`, formatDecimal(row.balance)])
+    body.push(['Total equity', formatDecimal(bs.data.equity ?? 0)])
+    body.push(['Total liabilities & equity', formatDecimal(bs.data.liabilitiesAndEquity ?? bs.data.liabilities + bs.data.equity)])
+    buildSimpleReportPdf('Balance Sheet', bsPeriodLabel, ['Account', 'Balance'], body)
+  }
+
+  const handleCustomerExport = () => {
+    if (!customerApplied || customerRowsFiltered.length === 0) return
+    buildSimpleReportPdf(
+      'Customer Balances',
+      formatReportPeriod(customerApplied.from ?? '', customerApplied.to ?? ''),
+      ['Code', 'Name', 'Given', 'Paid', 'Balance'],
+      customerRowsFiltered.map((r) => [r.code, r.name, formatDecimal(r.given), formatDecimal(r.paid), formatDecimal(r.balance)]),
+    )
+  }
+
+  const handleSupplierExport = () => {
+    if (!supplierApplied || supplierRowsFiltered.length === 0) return
+    buildSimpleReportPdf(
+      'Supplier Balances',
+      formatReportPeriod(supplierApplied.from ?? '', supplierApplied.to ?? ''),
+      ['Code', 'Name', 'Given', 'Paid', 'Balance'],
+      supplierRowsFiltered.map((r) => [r.code, r.name, formatDecimal(r.given), formatDecimal(r.paid), formatDecimal(r.balance)]),
+    )
+  }
+
   if (kind === 'ledger') {
     return (
       <div className="space-y-4">
@@ -668,7 +860,7 @@ export function FinancialReportsPage() {
           <button
             type="button"
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            onClick={() => window.print()}
+            onClick={handleLedgerExport}
           >
             Print / Export
           </button>
@@ -743,7 +935,7 @@ export function FinancialReportsPage() {
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Select an account to load the ledger.</p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <table className="min-w-[780px] divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50">
                 <tr className="text-left">
                   <th className="px-4 py-3 font-semibold text-slate-600">Date</th>
@@ -787,7 +979,7 @@ export function FinancialReportsPage() {
           <button
             type="button"
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            onClick={() => window.print()}
+            onClick={handleDailyCashFlowExport}
           >
             Print / Export
           </button>
@@ -865,15 +1057,15 @@ export function FinancialReportsPage() {
         ) : !ledgerAccountId ? (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Select an account to load daily cash flow.</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <div className="max-w-full overflow-x-auto overscroll-x-contain rounded-xl border border-slate-200 bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
+            <table className="w-full min-w-[860px] divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50">
                 <tr className="text-left">
-                  <th className="px-4 py-3 font-semibold text-slate-600">Date</th>
-                  <th className="px-4 py-3 font-semibold text-slate-600">Debit total</th>
-                  <th className="px-4 py-3 font-semibold text-slate-600">Credit total</th>
-                  <th className="px-4 py-3 font-semibold text-slate-600">Net (debit − credit)</th>
-                  <th className="px-4 py-3 font-semibold text-slate-600">Cumulative in period</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">Date</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">Debit total</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">Credit total</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">Net (debit − credit)</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">Cumulative in period</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -917,7 +1109,7 @@ export function FinancialReportsPage() {
           <button
             type="button"
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            onClick={() => window.print()}
+            onClick={handleProfitLossExport}
           >
             Print / Export
           </button>
@@ -1087,7 +1279,7 @@ export function FinancialReportsPage() {
               <button
                 type="button"
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                onClick={() => window.print()}
+                onClick={handleTrialExport}
               >
                 Print / Export
               </button>
@@ -1132,7 +1324,7 @@ export function FinancialReportsPage() {
           <button
             type="button"
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            onClick={() => window.print()}
+            onClick={handleBalanceSheetExport}
           >
             Print / Export
           </button>
@@ -1172,8 +1364,8 @@ export function FinancialReportsPage() {
               <input
                 type="date"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
+                value={bsAsOf}
+                onChange={(e) => setBsAsOf(e.target.value)}
               />
             </div>
           </div>
@@ -1194,12 +1386,6 @@ export function FinancialReportsPage() {
   }
 
   if (kind === 'customer') {
-    const canRunCustomerView =
-      effectiveCustomerBusinessId > 0 &&
-      customerReceivableAccountId != null &&
-      customerReceivableAccountId > 0 &&
-      !needsReportStation
-
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1207,7 +1393,7 @@ export function FinancialReportsPage() {
           <button
             type="button"
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            onClick={() => window.print()}
+            onClick={handleCustomerExport}
           >
             Print / Export
           </button>
@@ -1280,27 +1466,6 @@ export function FinancialReportsPage() {
                 onChange={(e) => setCustomerTo(e.target.value)}
               />
             </div>
-            <div className="w-full min-w-0 lg:w-auto">
-              <label className="mb-1 block text-sm font-medium text-transparent">View</label>
-              <button
-                type="button"
-                disabled={!canRunCustomerView}
-                onClick={() => {
-                  if (!canRunCustomerView || customerReceivableAccountId == null) return
-                  setCustomerApplied({
-                    businessId: effectiveCustomerBusinessId,
-                    stationId: reportStationId(customerStationId),
-                    from: customerFrom.trim() || undefined,
-                    to: customerTo.trim() || undefined,
-                    receivableAccountId: customerReceivableAccountId,
-                  })
-                  setCustomerPage(1)
-                }}
-                className="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
-              >
-                View
-              </button>
-            </div>
           </div>
         </div>
 
@@ -1308,9 +1473,13 @@ export function FinancialReportsPage() {
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Select a business to run customer balances.</p>
         ) : needsReportStation ? (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{reportStationBlockedMessage}</p>
+        ) : !routeCanView ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            No view permission for this report.
+          </p>
         ) : !customerApplied ? (
           <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Choose a receivable account, optional dates, then click <strong>View</strong> to load balances from <strong>journal entries</strong> on that account (lines with a customer subledger), for the selected period.
+            Choose a receivable account and optional dates. Results load automatically from journal entries on that account (customer subledger lines).
           </p>
         ) : (
           <DataTable<CustomerBalanceRow>
@@ -1350,12 +1519,6 @@ export function FinancialReportsPage() {
   }
 
   if (kind === 'supplier') {
-    const canRunSupplierView =
-      effectiveSupplierBusinessId > 0 &&
-      supplierPayableAccountId != null &&
-      supplierPayableAccountId > 0 &&
-      !needsReportStation
-
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1363,7 +1526,7 @@ export function FinancialReportsPage() {
           <button
             type="button"
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            onClick={() => window.print()}
+            onClick={handleSupplierExport}
           >
             Print / Export
           </button>
@@ -1436,27 +1599,6 @@ export function FinancialReportsPage() {
                 onChange={(e) => setSupplierTo(e.target.value)}
               />
             </div>
-            <div className="w-full min-w-0 lg:w-auto">
-              <label className="mb-1 block text-sm font-medium text-transparent">View</label>
-              <button
-                type="button"
-                disabled={!canRunSupplierView}
-                onClick={() => {
-                  if (!canRunSupplierView || supplierPayableAccountId == null) return
-                  setSupplierApplied({
-                    businessId: effectiveSupplierBusinessId,
-                    stationId: reportStationId(supplierStationId),
-                    from: supplierFrom.trim() || undefined,
-                    to: supplierTo.trim() || undefined,
-                    payableAccountId: supplierPayableAccountId,
-                  })
-                  setSupplierPage(1)
-                }}
-                className="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
-              >
-                View
-              </button>
-            </div>
           </div>
         </div>
 
@@ -1464,9 +1606,13 @@ export function FinancialReportsPage() {
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Select a business to run supplier balances.</p>
         ) : needsReportStation ? (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{reportStationBlockedMessage}</p>
+        ) : !routeCanView ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            No view permission for this report.
+          </p>
         ) : !supplierApplied ? (
           <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Choose a payable account, optional dates, then click <strong>View</strong> to load balances (journal activity on that account with supplier subledger links).
+            Choose a payable account and optional dates. Results load automatically from journal activity on that account with supplier subledger links.
           </p>
         ) : (
           <DataTable<CustomerBalanceRow>

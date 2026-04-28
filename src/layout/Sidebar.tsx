@@ -27,7 +27,6 @@ import {
   Zap,
   UserRoundPlus,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
 import { useNavAccess } from '../hooks/useNavAccess'
 import { cn } from '../lib/cn'
 import {
@@ -36,32 +35,45 @@ import {
 } from '../lib/financialReportRoutes'
 import { CollapsedFlyoutMenu, navTargetIsActive, type FlyoutItem } from './CollapsedFlyoutMenu'
 
-const OPS_SECTIONS: { title: string; icon: LucideIcon; to: string; linkLabel: string }[] = [
-  { title: 'Expenses', icon: Wallet, to: '/expenses', linkLabel: 'Expenses' },
-  { title: 'Suppliers', icon: Contact, to: '/suppliers', linkLabel: 'Suppliers' },
-  { title: 'Purchases', icon: Cylinder, to: '/purchases', linkLabel: 'Purchases' },
-  { title: 'Inventory', icon: Droplets, to: '/inventory', linkLabel: 'Inventory' },
-  { title: 'Rates', icon: Percent, to: '/rates', linkLabel: 'Rates' },
-  { title: 'Generator usage', icon: Zap, to: '/generator-usage', linkLabel: 'Generator usage' },
-  { title: 'DippingPump', icon: Link2, to: '/dipping-pumps', linkLabel: 'DippingPump' },
-  { title: 'Dipping', icon: Beaker, to: '/dipping', linkLabel: 'Dipping' },
-  { title: 'Liter received', icon: Truck, to: '/liter-received', linkLabel: 'Liter received' },
-  { title: 'Fuel given', icon: UserRoundPlus, to: '/customer-fuel-givens', linkLabel: 'Fuel given' },
+function managementNavItemAllowed(to: string, linkAllowed: (route: string) => boolean): boolean {
+  if (to === '/nozzles') return linkAllowed('/nozzles') || linkAllowed('/pumps/nozzles')
+  if (to === '/dipping-pumps')
+    return linkAllowed('/dipping-pumps') || linkAllowed('/pumps/dipping-pumps') || linkAllowed('/pumps')
+  return linkAllowed(to)
+}
+
+const OPERATIONS_CHILDREN: FlyoutItem[] = [
+  { to: '/inventory', label: 'Fuel Sales', icon: Droplets },
+  { to: '/customer-fuel-givens', label: 'Customers', icon: UserRoundPlus },
+  { to: '/liter-received', label: 'Liter Received', icon: Truck },
+  { to: '/expenses', label: 'Expenses', icon: Wallet },
+  { to: '/generator-usage', label: 'Generators', icon: Zap },
+  { to: '/accounting/customer-payments', label: 'Payments', icon: CreditCard },
 ]
 
-const PUMP_CHILDREN: FlyoutItem[] = [
-  { to: '/pumps', label: 'Pump creation', icon: Fuel },
+const MANAGEMENT_CHILDREN: FlyoutItem[] = [
+  { to: '/setup/fuel-types', label: 'Fuel Types', icon: Fuel },
+  { to: '/setup/fuel-prices', label: 'Pricing', icon: Droplets },
+  { to: '/rates', label: 'Rates', icon: Percent },
+  { to: '/dipping', label: 'Tank (Dipping)', icon: Beaker },
+  { to: '/pumps', label: 'Pumps', icon: Fuel },
   { to: '/nozzles', label: 'Nozzles', icon: Link2 },
+  { to: '/dipping-pumps', label: 'DippingPump', icon: Link2 },
+  { to: '/suppliers', label: 'Suppliers', icon: Contact },
+  { to: '/purchases', label: 'Purchases', icon: Cylinder },
+]
+
+const ADMINISTRATION_CHILDREN: FlyoutItem[] = [
+  { to: '/setup/users', label: 'Users', icon: Users },
+  { to: '/setup/business-users', label: 'Assigning Station', icon: UserSquare2 },
+  { to: '/setup/permissions', label: 'Permissions', icon: Shield },
+  { to: '/setup/settings', label: 'Settings', icon: User },
 ]
 
 const ACCOUNTING_CHILDREN: FlyoutItem[] = [
   { to: '/accounting/accounts', label: 'Accounts', icon: Wallet },
   { to: '/accounting/charts-of-accounts', label: 'Charts of accounts', icon: ListTree },
   { to: '/accounting/manual-journal-entry', label: 'Manual journal entry', icon: FileText },
-]
-
-const PAYMENTS_CHILDREN: FlyoutItem[] = [
-  { to: '/accounting/customer-payments', label: 'Payments', icon: Wallet },
 ]
 
 const FINANCIAL_REPORTS_CHILDREN: FlyoutItem[] = [
@@ -85,109 +97,18 @@ const REPORTS_CHILDREN: FlyoutItem[] = [
   { to: '/reports/outstanding-customers', label: 'Outstanding customers', icon: AlertCircle },
 ]
 
-const SETUP_CHILDREN: FlyoutItem[] = [
+const MAIN_SETUP_CHILDREN: FlyoutItem[] = [
+  { to: '/setup/businesses', label: 'Business', icon: Building2 },
   { to: '/setup/roles', label: 'Roles', icon: Shield },
   { to: '/setup/users', label: 'Users', icon: Users },
-  { to: '/setup/business-users', label: 'Assigning Station', icon: UserSquare2 },
-  { to: '/setup/businesses', label: 'Businesses', icon: Building2 },
   { to: '/stations', label: 'Stations', icon: MapPin },
+  { to: '/setup/business-users', label: 'Assigning Station', icon: UserSquare2 },
   { to: '/setup/menus', label: 'Menus', icon: ListTree },
   { to: '/setup/submenus', label: 'Submenus', icon: Link2 },
-  { to: '/setup/permissions', label: 'Permissions', icon: Shield },
-  { to: '/setup/fuel-types', label: 'Fuel types', icon: Fuel },
   { to: '/setup/currencies', label: 'Currencies', icon: Wallet },
-  { to: '/setup/fuel-prices', label: 'Fuel prices', icon: Droplets },
+  { to: '/setup/permissions', label: 'Permissions', icon: Shield },
   { to: '/setup/settings', label: 'Settings', icon: User },
 ]
-
-function CollapsibleOpsSection({
-  title,
-  icon: Icon,
-  to,
-  linkLabel,
-  collapsed,
-}: {
-  title: string
-  icon: LucideIcon
-  to: string
-  linkLabel: string
-  collapsed: boolean
-}) {
-  const [open, setOpen] = useState(true)
-  const [hover, setHover] = useState(false)
-  const anchorRef = useRef<HTMLButtonElement>(null)
-  const leaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const clear = () => {
-    if (leaveT.current) {
-      clearTimeout(leaveT.current)
-      leaveT.current = null
-    }
-  }
-  const onEnter = () => {
-    clear()
-    setHover(true)
-  }
-  const onLeave = () => {
-    clear()
-    leaveT.current = setTimeout(() => setHover(false), 220)
-  }
-
-  const flyoutItems: FlyoutItem[] = [{ to, label: linkLabel, icon: Icon }]
-
-  return (
-    <div className="relative overflow-visible" onMouseEnter={onEnter} onMouseLeave={onLeave}>
-      <button
-        ref={anchorRef}
-        type="button"
-        onClick={() => !collapsed && setOpen((o) => !o)}
-        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
-        title={collapsed ? title : undefined}
-      >
-        <Icon className="h-5 w-5 shrink-0" />
-        {!collapsed && (
-          <>
-            <span className="flex-1">{title}</span>
-            {open ? (
-              <ChevronDown className="h-4 w-4 shrink-0" />
-            ) : (
-              <ChevronRight className="h-4 w-4 shrink-0" />
-            )}
-          </>
-        )}
-      </button>
-
-      {collapsed && (
-        <CollapsedFlyoutMenu
-          open={hover}
-          title={title}
-          items={flyoutItems}
-          anchorRef={anchorRef}
-          onRequestClose={() => setHover(false)}
-          onMouseEnter={onEnter}
-          onMouseLeave={onLeave}
-        />
-      )}
-
-      {!collapsed && open && (
-        <div className="ml-2 mt-0.5 space-y-0.5 border-l border-slate-700 pl-2">
-          <NavLink
-            to={to}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',
-                isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white',
-              )
-            }
-          >
-            <Icon className="h-4 w-4 shrink-0 opacity-80" />
-            {linkLabel}
-          </NavLink>
-        </div>
-      )}
-    </div>
-  )
-}
 
 interface SidebarProps {
   collapsed: boolean
@@ -201,21 +122,22 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role, stationName }: SidebarProps) {
   const location = useLocation()
   const { linkAllowed, canViewDashboard } = useNavAccess()
+  const isAdminUser = role?.trim().toLowerCase() === 'admin'
 
-  const opsSections = useMemo(
-    () =>
-      OPS_SECTIONS.filter((s) => {
-        if (s.to === '/dipping-pumps') return linkAllowed('/dipping-pumps') || linkAllowed('/pumps/dipping-pumps') || linkAllowed('/pumps')
-        return linkAllowed(s.to)
-      }),
+  const operationsChildren = useMemo(
+    () => OPERATIONS_CHILDREN.filter((c) => linkAllowed(c.to)),
+    [linkAllowed],
+  )
+  const managementChildren = useMemo(
+    () => MANAGEMENT_CHILDREN.filter((c) => managementNavItemAllowed(c.to, linkAllowed)),
+    [linkAllowed],
+  )
+  const administrationChildren = useMemo(
+    () => ADMINISTRATION_CHILDREN.filter((c) => linkAllowed(c.to)),
     [linkAllowed],
   )
   const accountingChildren = useMemo(
     () => ACCOUNTING_CHILDREN.filter((c) => linkAllowed(c.to)),
-    [linkAllowed],
-  )
-  const paymentsChildren = useMemo(
-    () => PAYMENTS_CHILDREN.filter((c) => linkAllowed(c.to)),
     [linkAllowed],
   )
   const financialReportsChildren = useMemo(() => {
@@ -230,34 +152,38 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
     })
   }, [linkAllowed])
   const reportsChildren = useMemo(() => REPORTS_CHILDREN.filter((c) => linkAllowed(c.to)), [linkAllowed])
-  const setupChildren = useMemo(
-    () => SETUP_CHILDREN.filter((x) => linkAllowed(x.to)),
+  const mainSetupChildren = useMemo(
+    () => MAIN_SETUP_CHILDREN.filter((x) => linkAllowed(x.to)),
     [linkAllowed],
   )
   const [setupOpen, setSetupOpen] = useState(true)
   const [reportsOpen, setReportsOpen] = useState(true)
   const [accountingOpen, setAccountingOpen] = useState(true)
-  const [paymentsOpen, setPaymentsOpen] = useState(true)
+  const [operationsOpen, setOperationsOpen] = useState(true)
+  const [managementOpen, setManagementOpen] = useState(true)
+  const [administrationOpen, setAdministrationOpen] = useState(true)
   const [financialReportsOpen, setFinancialReportsOpen] = useState(true)
   const [hoverSetup, setHoverSetup] = useState(false)
   const [hoverReports, setHoverReports] = useState(false)
   const [hoverAccounting, setHoverAccounting] = useState(false)
-  const [hoverPayments, setHoverPayments] = useState(false)
+  const [hoverOperations, setHoverOperations] = useState(false)
+  const [hoverManagement, setHoverManagement] = useState(false)
+  const [hoverAdministration, setHoverAdministration] = useState(false)
   const [hoverFinancialReports, setHoverFinancialReports] = useState(false)
-  const [pumpOpen, setPumpOpen] = useState(true)
-  const [hoverPump, setHoverPump] = useState(false)
   const setupLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reportsLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
   const accountingLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const paymentsLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const operationsLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const managementLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const administrationLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
   const financialReportsLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pumpLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
   const setupAnchorRef = useRef<HTMLButtonElement>(null)
   const reportsAnchorRef = useRef<HTMLButtonElement>(null)
   const accountingAnchorRef = useRef<HTMLButtonElement>(null)
-  const paymentsAnchorRef = useRef<HTMLButtonElement>(null)
+  const operationsAnchorRef = useRef<HTMLButtonElement>(null)
+  const managementAnchorRef = useRef<HTMLButtonElement>(null)
+  const administrationAnchorRef = useRef<HTMLButtonElement>(null)
   const financialReportsAnchorRef = useRef<HTMLButtonElement>(null)
-  const pumpAnchorRef = useRef<HTMLButtonElement>(null)
 
   const clearSetupTimer = () => {
     if (setupLeaveT.current) {
@@ -305,19 +231,49 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
     accountingLeaveT.current = setTimeout(() => setHoverAccounting(false), 220)
   }, [])
 
-  const clearPaymentsTimer = () => {
-    if (paymentsLeaveT.current) {
-      clearTimeout(paymentsLeaveT.current)
-      paymentsLeaveT.current = null
+  const clearOperationsTimer = () => {
+    if (operationsLeaveT.current) {
+      clearTimeout(operationsLeaveT.current)
+      operationsLeaveT.current = null
     }
   }
-  const enterPayments = useCallback(() => {
-    clearPaymentsTimer()
-    setHoverPayments(true)
+  const enterOperations = useCallback(() => {
+    clearOperationsTimer()
+    setHoverOperations(true)
   }, [])
-  const leavePayments = useCallback(() => {
-    clearPaymentsTimer()
-    paymentsLeaveT.current = setTimeout(() => setHoverPayments(false), 220)
+  const leaveOperations = useCallback(() => {
+    clearOperationsTimer()
+    operationsLeaveT.current = setTimeout(() => setHoverOperations(false), 220)
+  }, [])
+
+  const clearManagementTimer = () => {
+    if (managementLeaveT.current) {
+      clearTimeout(managementLeaveT.current)
+      managementLeaveT.current = null
+    }
+  }
+  const enterManagement = useCallback(() => {
+    clearManagementTimer()
+    setHoverManagement(true)
+  }, [])
+  const leaveManagement = useCallback(() => {
+    clearManagementTimer()
+    managementLeaveT.current = setTimeout(() => setHoverManagement(false), 220)
+  }, [])
+
+  const clearAdministrationTimer = () => {
+    if (administrationLeaveT.current) {
+      clearTimeout(administrationLeaveT.current)
+      administrationLeaveT.current = null
+    }
+  }
+  const enterAdministration = useCallback(() => {
+    clearAdministrationTimer()
+    setHoverAdministration(true)
+  }, [])
+  const leaveAdministration = useCallback(() => {
+    clearAdministrationTimer()
+    administrationLeaveT.current = setTimeout(() => setHoverAdministration(false), 220)
   }, [])
 
   const clearFinancialReportsTimer = () => {
@@ -333,21 +289,6 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
   const leaveFinancialReports = useCallback(() => {
     clearFinancialReportsTimer()
     financialReportsLeaveT.current = setTimeout(() => setHoverFinancialReports(false), 220)
-  }, [])
-
-  const clearPumpTimer = () => {
-    if (pumpLeaveT.current) {
-      clearTimeout(pumpLeaveT.current)
-      pumpLeaveT.current = null
-    }
-  }
-  const enterPump = useCallback(() => {
-    clearPumpTimer()
-    setHoverPump(true)
-  }, [])
-  const leavePump = useCallback(() => {
-    clearPumpTimer()
-    pumpLeaveT.current = setTimeout(() => setHoverPump(false), 220)
   }, [])
 
   const profileTitle = [userName, userEmail, role].filter(Boolean).join(' · ') || 'Profile'
@@ -389,46 +330,211 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
           {!collapsed && (canViewDashboard ? 'Dashboard' : 'Home')}
         </NavLink>
 
-        {opsSections.map((s) => (
-          <CollapsibleOpsSection key={s.to} {...s} collapsed={collapsed} />
-        ))}
-
-        {(linkAllowed('/pumps') || linkAllowed('/nozzles') || linkAllowed('/pumps/nozzles')) ? (
-        <div className="relative overflow-visible" onMouseEnter={enterPump} onMouseLeave={leavePump}>
+        {operationsChildren.length > 0 ? (
+        <div className="relative overflow-visible" onMouseEnter={enterOperations} onMouseLeave={leaveOperations}>
           <button
-            ref={pumpAnchorRef}
+            ref={operationsAnchorRef}
             type="button"
-            onClick={() => !collapsed && setPumpOpen((o) => !o)}
+            onClick={() => !collapsed && setOperationsOpen((o) => !o)}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
           >
             <Fuel className="h-5 w-5 shrink-0" />
             {!collapsed && (
               <>
-                <span className="flex-1">Pump</span>
-                {pumpOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                <span className="flex-1">Operations</span>
+                {operationsOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0" />
+                )}
               </>
             )}
           </button>
 
           {collapsed && (
             <CollapsedFlyoutMenu
-              open={hoverPump}
-              title="Pump"
-              items={PUMP_CHILDREN}
-              anchorRef={pumpAnchorRef}
-              onRequestClose={() => setHoverPump(false)}
-              onMouseEnter={enterPump}
-              onMouseLeave={leavePump}
+              open={hoverOperations}
+              title="Operations"
+              items={operationsChildren}
+              anchorRef={operationsAnchorRef}
+              onRequestClose={() => setHoverOperations(false)}
+              onMouseEnter={enterOperations}
+              onMouseLeave={leaveOperations}
             />
           )}
 
-          {!collapsed && pumpOpen && (
+          {!collapsed && operationsOpen && (
             <div className="ml-2 mt-1 space-y-0.5 border-l border-slate-700 pl-2">
-              {PUMP_CHILDREN.map(({ to, label, icon: Icon }) => (
+              {operationsChildren.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',
+                      isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white',
+                    )
+                  }
+                >
+                  <Icon className="h-4 w-4 shrink-0 opacity-80" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          )}
+        </div>
+        ) : null}
+
+        {managementChildren.length > 0 ? (
+        <div className="relative overflow-visible" onMouseEnter={enterManagement} onMouseLeave={leaveManagement}>
+          <button
+            ref={managementAnchorRef}
+            type="button"
+            onClick={() => !collapsed && setManagementOpen((o) => !o)}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
+          >
+            <Building2 className="h-5 w-5 shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="flex-1">Management</span>
+                {managementOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0" />
+                )}
+              </>
+            )}
+          </button>
+
+          {collapsed && (
+            <CollapsedFlyoutMenu
+              open={hoverManagement}
+              title="Management"
+              items={managementChildren}
+              anchorRef={managementAnchorRef}
+              onRequestClose={() => setHoverManagement(false)}
+              onMouseEnter={enterManagement}
+              onMouseLeave={leaveManagement}
+            />
+          )}
+
+          {!collapsed && managementOpen && (
+            <div className="ml-2 mt-1 space-y-0.5 border-l border-slate-700 pl-2">
+              {managementChildren.map(({ to, label, icon: Icon }) => (
                 <NavLink
                   key={to}
                   to={to}
                   end={to === '/pumps'}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',
+                      isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white',
+                    )
+                  }
+                >
+                  <Icon className="h-4 w-4 shrink-0 opacity-80" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          )}
+        </div>
+        ) : null}
+
+        {administrationChildren.length > 0 ? (
+        <div className="relative overflow-visible" onMouseEnter={enterAdministration} onMouseLeave={leaveAdministration}>
+          <button
+            ref={administrationAnchorRef}
+            type="button"
+            onClick={() => !collapsed && setAdministrationOpen((o) => !o)}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
+          >
+            <Shield className="h-5 w-5 shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="flex-1">Administration</span>
+                {administrationOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0" />
+                )}
+              </>
+            )}
+          </button>
+
+          {collapsed && (
+            <CollapsedFlyoutMenu
+              open={hoverAdministration}
+              title="Administration"
+              items={administrationChildren}
+              anchorRef={administrationAnchorRef}
+              onRequestClose={() => setHoverAdministration(false)}
+              onMouseEnter={enterAdministration}
+              onMouseLeave={leaveAdministration}
+            />
+          )}
+
+          {!collapsed && administrationOpen && (
+            <div className="ml-2 mt-1 space-y-0.5 border-l border-slate-700 pl-2">
+              {administrationChildren.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',
+                      isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white',
+                    )
+                  }
+                >
+                  <Icon className="h-4 w-4 shrink-0 opacity-80" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          )}
+        </div>
+        ) : null}
+
+        {reportsChildren.length > 0 ? (
+        <div className="relative overflow-visible" onMouseEnter={enterReports} onMouseLeave={leaveReports}>
+          <button
+            ref={reportsAnchorRef}
+            type="button"
+            onClick={() => !collapsed && setReportsOpen((o) => !o)}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
+          >
+            <FileText className="h-5 w-5 shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="flex-1">Reports</span>
+                {reportsOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0" />
+                )}
+              </>
+            )}
+          </button>
+
+          {collapsed && (
+            <CollapsedFlyoutMenu
+              open={hoverReports}
+              title="Reports"
+              items={reportsChildren}
+              anchorRef={reportsAnchorRef}
+              onRequestClose={() => setHoverReports(false)}
+              onMouseEnter={enterReports}
+              onMouseLeave={leaveReports}
+            />
+          )}
+
+          {!collapsed && reportsOpen && (
+            <div className="ml-2 mt-1 space-y-0.5 border-l border-slate-700 pl-2">
+              {reportsChildren.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
                   className={({ isActive }) =>
                     cn(
                       'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',
@@ -500,61 +606,6 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
         </div>
         ) : null}
 
-        {paymentsChildren.length > 0 ? (
-        <div className="relative overflow-visible" onMouseEnter={enterPayments} onMouseLeave={leavePayments}>
-          <button
-            ref={paymentsAnchorRef}
-            type="button"
-            onClick={() => !collapsed && setPaymentsOpen((o) => !o)}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
-          >
-            <CreditCard className="h-5 w-5 shrink-0" />
-            {!collapsed && (
-              <>
-                <span className="flex-1">Payments</span>
-                {paymentsOpen ? (
-                  <ChevronDown className="h-4 w-4 shrink-0" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 shrink-0" />
-                )}
-              </>
-            )}
-          </button>
-
-          {collapsed && (
-            <CollapsedFlyoutMenu
-              open={hoverPayments}
-              title="Payments"
-              items={paymentsChildren}
-              anchorRef={paymentsAnchorRef}
-              onRequestClose={() => setHoverPayments(false)}
-              onMouseEnter={enterPayments}
-              onMouseLeave={leavePayments}
-            />
-          )}
-
-          {!collapsed && paymentsOpen && (
-            <div className="ml-2 mt-1 space-y-0.5 border-l border-slate-700 pl-2">
-              {paymentsChildren.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',
-                      isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white',
-                    )
-                  }
-                >
-                  <Icon className="h-4 w-4 shrink-0 opacity-80" />
-                  {label}
-                </NavLink>
-              ))}
-            </div>
-          )}
-        </div>
-        ) : null}
-
         {financialReportsChildren.length > 0 ? (
         <div className="relative overflow-visible" onMouseEnter={enterFinancialReports} onMouseLeave={leaveFinancialReports}>
           <button
@@ -566,7 +617,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
             <BarChart2 className="h-5 w-5 shrink-0" />
             {!collapsed && (
               <>
-                <span className="flex-1">Financial reports</span>
+                <span className="flex-1">Financial Report</span>
                 {financialReportsOpen ? (
                   <ChevronDown className="h-4 w-4 shrink-0" />
                 ) : (
@@ -579,7 +630,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
           {collapsed && (
             <CollapsedFlyoutMenu
               open={hoverFinancialReports}
-              title="Financial reports"
+              title="Financial Report"
               items={financialReportsChildren}
               anchorRef={financialReportsAnchorRef}
               onRequestClose={() => setHoverFinancialReports(false)}
@@ -612,62 +663,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
         </div>
         ) : null}
 
-        {reportsChildren.length > 0 ? (
-        <div className="relative overflow-visible" onMouseEnter={enterReports} onMouseLeave={leaveReports}>
-          <button
-            ref={reportsAnchorRef}
-            type="button"
-            onClick={() => !collapsed && setReportsOpen((o) => !o)}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
-          >
-            <FileText className="h-5 w-5 shrink-0" />
-            {!collapsed && (
-              <>
-                <span className="flex-1">Reports</span>
-                {reportsOpen ? (
-                  <ChevronDown className="h-4 w-4 shrink-0" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 shrink-0" />
-                )}
-              </>
-            )}
-          </button>
-
-          {collapsed && (
-            <CollapsedFlyoutMenu
-              open={hoverReports}
-              title="Reports"
-              items={reportsChildren}
-              anchorRef={reportsAnchorRef}
-              onRequestClose={() => setHoverReports(false)}
-              onMouseEnter={enterReports}
-              onMouseLeave={leaveReports}
-            />
-          )}
-
-          {!collapsed && reportsOpen && (
-            <div className="ml-2 mt-1 space-y-0.5 border-l border-slate-700 pl-2">
-              {reportsChildren.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',
-                      isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white',
-                    )
-                  }
-                >
-                  <Icon className="h-4 w-4 shrink-0 opacity-80" />
-                  {label}
-                </NavLink>
-              ))}
-            </div>
-          )}
-        </div>
-        ) : null}
-
-        {setupChildren.length > 0 ? (
+        {mainSetupChildren.length > 0 && !isAdminUser ? (
         <div className="relative mt-1 overflow-visible" onMouseEnter={enterSetup} onMouseLeave={leaveSetup}>
           <button
             ref={setupAnchorRef}
@@ -692,7 +688,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
             <CollapsedFlyoutMenu
               open={hoverSetup}
               title="Main setup"
-              items={setupChildren}
+              items={mainSetupChildren}
               anchorRef={setupAnchorRef}
               onRequestClose={() => setHoverSetup(false)}
               onMouseEnter={enterSetup}
@@ -702,7 +698,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
 
           {!collapsed && setupOpen && (
             <div className="ml-2 mt-1 space-y-0.5 border-l border-slate-700 pl-2">
-              {setupChildren.map(({ to, label, icon: Icon }) => (
+              {mainSetupChildren.map(({ to, label, icon: Icon }) => (
                 <NavLink
                   key={to}
                   to={to}

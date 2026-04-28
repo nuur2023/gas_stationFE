@@ -21,6 +21,7 @@ import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
 import { useToast } from '../../components/ToastProvider'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
+import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import { useDebouncedValue } from '../../lib/hooks'
 import {
   resolveFormStationId,
@@ -41,6 +42,7 @@ type InventorySaleRow = {
 }
 
 export function InventorySalesPage() {
+  const { canView: routeCanView, canDelete: routeCanDelete, canCreate: routeCanCreate } = usePagePermissionActions()
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const effectiveStationId = useEffectiveStationId()
@@ -340,15 +342,27 @@ export function InventorySalesPage() {
         align: 'center',
         render: (r) => (
           <div className="inline-flex items-center gap-1">
-            <Link
-              to={`/inventory/${r.id}`}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              View
-            </Link>
+            {routeCanView ? (
+              <Link
+                to={`/inventory/${r.id}`}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                View
+              </Link>
+            ) : (
+              <span
+                className="inline-flex cursor-not-allowed items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-400 opacity-60"
+                title="No view permission"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                View
+              </span>
+            )}
             <button
               type="button"
+              disabled={!routeCanDelete}
+              title={!routeCanDelete ? 'No delete permission' : 'Delete'}
               onClick={() =>
                 requestDelete({
                   title: 'Delete inventory sale?',
@@ -358,8 +372,7 @@ export function InventorySalesPage() {
                   },
                 })
               }
-              className="inline-flex rounded p-1.5 text-red-600 hover:bg-red-50"
-              title="Delete"
+              className="inline-flex rounded p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -377,7 +390,7 @@ export function InventorySalesPage() {
       },
       ...base.slice(1),
     ]
-  }, [role, businessNameById, stationNameById])
+  }, [role, businessNameById, stationNameById, routeCanView, routeCanDelete])
 
   return (
     <>
@@ -406,8 +419,10 @@ export function InventorySalesPage() {
         extraToolbar={
           <button
             type="button"
+            disabled={!routeCanCreate}
+            title={!routeCanCreate ? 'No create permission' : undefined}
             onClick={openBatchModal}
-            className="inline-flex w-full shrink-0 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-700 sm:w-auto"
+            className="inline-flex w-full shrink-0 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
           >
             Add inventory batch
           </button>
@@ -522,38 +537,40 @@ export function InventorySalesPage() {
             <button
               type="button"
               onClick={addLineToBatch}
-              disabled={duplicateNozzleInBatch || !splitMatchesUsage || nozzleId <= 0}
+              disabled={duplicateNozzleInBatch || !splitMatchesUsage || nozzleId <= 0 || !routeCanCreate}
+              title={!routeCanCreate ? 'No create permission' : undefined}
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Add line
             </button>
           </div>
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="w-full text-sm">
+          <div className="max-w-full overflow-x-auto overscroll-x-contain rounded-lg border border-slate-200 [-webkit-overflow-scrolling:touch]">
+            <table className="w-max min-w-[920px] text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-3 py-2 text-left">Nozzle</th>
-                  <th className="px-3 py-2 text-right">Opening</th>
-                  <th className="px-3 py-2 text-right">Closing</th>
-                  <th className="px-3 py-2 text-right">SSP L</th>
-                  <th className="px-3 py-2 text-right">USD L</th>
-                  <th className="px-3 py-2 text-right">Action</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-left">Nozzle</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Opening</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Closing</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">SSP L</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">USD L</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {batchLines.map((line) => (
                   <tr key={line.key} className="border-t border-slate-100">
-                    <td className="px-3 py-2">{nozzleOptions.find((n) => Number(n.value) === line.nozzleId)?.label ?? line.nozzleId}</td>
-                    <td className="px-3 py-2 text-right">{line.openingLiters}</td>
-                    <td className="px-3 py-2 text-right">{line.closingLiters}</td>
-                    <td className="px-3 py-2 text-right">{line.sspLiters}</td>
-                    <td className="px-3 py-2 text-right">{line.usdLiters}</td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="whitespace-nowrap px-3 py-2">{nozzleOptions.find((n) => Number(n.value) === line.nozzleId)?.label ?? line.nozzleId}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right">{line.openingLiters}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right">{line.closingLiters}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right">{line.sspLiters}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right">{line.usdLiters}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right">
                       <button
                         type="button"
+                        disabled={!routeCanCreate}
+                        title={!routeCanCreate ? 'No create permission' : 'Remove'}
                         onClick={() => setBatchLines((prev) => prev.filter((x) => x.key !== line.key))}
-                        className="rounded p-1.5 text-red-600 hover:bg-red-50"
-                        title="Remove"
+                        className="rounded p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -613,7 +630,8 @@ export function InventorySalesPage() {
             </button>
             <button
               type="button"
-              disabled={batchLines.length === 0 || batchSaving}
+              disabled={batchLines.length === 0 || batchSaving || !routeCanCreate}
+              title={!routeCanCreate ? 'No create permission' : undefined}
               onClick={() => void submitBatch()}
               className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
             >

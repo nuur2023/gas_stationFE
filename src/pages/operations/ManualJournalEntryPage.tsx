@@ -17,6 +17,7 @@ import { DateField } from '../../components/DateField'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
+import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import { useDebouncedValue } from '../../lib/hooks'
 import { formatDecimal } from '../../lib/formatNumber'
 import { isAccountsPayable, isAccountsReceivable } from '../../lib/accountingSubledger'
@@ -30,6 +31,7 @@ import {
 import type { JournalEntry, JournalEntryWriteRequest } from '../../types/models'
 
 export function ManualJournalEntryPage() {
+  const { canView: routeCanView, canCreate: routeCanCreate } = usePagePermissionActions()
   type DraftLine = {
     accountId: number | null
     debit: string
@@ -319,9 +321,10 @@ export function ManualJournalEntryPage() {
         renderExtraRowActions={(row) => (
           <button
             type="button"
-            title="View journal details"
+            title={!routeCanView ? 'No view permission' : 'View journal details'}
+            disabled={!routeCanView}
             onClick={() => navigate(`/accounting/manual-journal-entry/${row.id}`)}
-            className="mr-1 inline-flex rounded p-1.5 text-slate-600 hover:bg-slate-100"
+            className="mr-1 inline-flex rounded p-1.5 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Eye className="h-4 w-4" />
           </button>
@@ -557,7 +560,8 @@ export function ManualJournalEntryPage() {
           <button
             type="button"
             onClick={save}
-            disabled={!linesValid || !description.trim()}
+            disabled={!linesValid || !description.trim() || !routeCanCreate}
+            title={!routeCanCreate ? 'No create permission' : undefined}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
             Post

@@ -2,8 +2,11 @@ import { useMemo } from 'react'
 import { Droplets, Flame, Table2 } from 'lucide-react'
 import {
   CartesianGrid,
+  Cell,
   Line,
   LineChart,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -72,6 +75,7 @@ export function DashboardPage() {
 }
 
 function DashboardContent() {
+  const PIE_COLORS = ['#22c55e', '#0f766e', '#334155', '#64748b', '#94a3b8', '#cbd5e1']
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const { data: inventories } = useGetInventoriesQuery({
     page: 1,
@@ -183,6 +187,23 @@ function DashboardContent() {
     }
     return { petrol, diesel }
   }, [dippings, fuelTypeKindById])
+
+  const recentInventoryPieData = useMemo(() => {
+    const byNozzle = new Map<string, number>()
+    for (const row of recentInventoryRows) {
+      const label = nozzleLabelById.get(row.nozzleId) ?? `Nozzle #${row.nozzleId}`
+      const usage = Number(row.usageLiters) || 0
+      byNozzle.set(label, (byNozzle.get(label) ?? 0) + usage)
+    }
+    return Array.from(byNozzle.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+  }, [recentInventoryRows, nozzleLabelById])
+
+  const recentInventoryTotalUsage = useMemo(
+    () => recentInventoryPieData.reduce((sum, row) => sum + row.value, 0),
+    [recentInventoryPieData],
+  )
 
   const todayUsageByKind = useMemo(() => {
     const rows = inventories?.items ?? []
@@ -371,41 +392,66 @@ function DashboardContent() {
           <h2 className="text-lg font-semibold text-slate-800">Recent inventory</h2>
           <p className="mt-1 text-sm text-slate-500">Last 3 local calendar days only.</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium text-slate-600">Date</th>
-                <th className="px-4 py-2 text-left font-medium text-slate-600">Pump</th>
-                <th className="px-4 py-2 text-right font-medium text-slate-600">Usage L</th>
-                <th className="px-4 py-2 text-right font-medium text-slate-600">SSP / USD</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {recentInventoryRows.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
-                    No inventory rows in the last 3 days.
-                  </td>
-                </tr>
-              )}
-              {recentInventoryRows.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/80">
-                  <td className="px-4 py-2 text-slate-800">{new Date(r.date).toLocaleString()}</td>
-                  <td className="px-4 py-2 text-slate-700">
-                    {nozzleLabelById.get(r.nozzleId) ?? `Nozzle #${r.nozzleId}`}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">{formatDecimal(Number(r.usageLiters))}</td>
-                  <td className="px-4 py-2 text-right tabular-nums font-medium text-slate-800">
-                    {formatDecimal(Number(r.sspAmount))} SSP
-                    <span className="mx-1 text-slate-300">·</span>
-                    {formatCurrency(Number(r.usdAmount), 'USD')}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {recentInventoryPieData.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-slate-500">No inventory rows in the last 3 days.</div>
+        ) : (
+          <div className="grid gap-4 p-4 lg:grid-cols-[340px_1fr]">
+            <div className="h-64 rounded-lg bg-slate-50 p-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={recentInventoryPieData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={0}
+                    outerRadius={90}
+                    paddingAngle={2}
+                    stroke="#ffffff"
+                    strokeWidth={2}
+                  >
+                    {recentInventoryPieData.map((_, index) => (
+                      <Cell key={`recent-inv-slice-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number, name: string) => {
+                      const amount = Number(value) || 0
+                      const pct = recentInventoryTotalUsage > 0 ? (amount / recentInventoryTotalUsage) * 100 : 0
+                      return [`${formatDecimal(amount)} L (${pct.toFixed(1)}%)`, name]
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <div className="grid grid-cols-[1fr_auto_auto] gap-3 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <span>Pump / Nozzle</span>
+                <span className="text-right">Usage L</span>
+                <span className="text-right">%</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {recentInventoryPieData.map((row, index) => {
+                  const pct = recentInventoryTotalUsage > 0 ? (row.value / recentInventoryTotalUsage) * 100 : 0
+                  return (
+                    <div key={row.name} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 px-3 py-2 text-sm">
+                      <div className="flex items-center gap-2 text-slate-700">
+                        <span
+                          className="inline-block h-6 w-1.5 rounded-full"
+                          style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+                          aria-hidden
+                        />
+                        <span className="truncate">{row.name}</span>
+                      </div>
+                      <span className="text-right tabular-nums font-medium text-slate-800">{formatDecimal(row.value)}</span>
+                      <span className="text-right tabular-nums text-slate-600">{pct.toFixed(0)}%</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

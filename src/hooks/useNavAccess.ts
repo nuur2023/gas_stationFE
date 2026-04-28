@@ -6,6 +6,7 @@ import {
   FINANCIAL_REPORT_LEGACY_CORE_ROUTES,
   FINANCIAL_REPORT_PATH_TO_LEGACY,
 } from '../lib/financialReportRoutes'
+import { permissionItemCoversPath } from '../lib/permissionItemCoversPath'
 import { permissionRouteMatches } from '../lib/permissionRoutes'
 
 function splitTo(to: string): { pathname: string; search: string } {
@@ -103,6 +104,13 @@ function bypassPermissionNav(role: string | null): boolean {
   return role === 'SuperAdmin'
 }
 
+export type RouteActionFlags = {
+  canView: boolean
+  canCreate: boolean
+  canUpdate: boolean
+  canDelete: boolean
+}
+
 export function useNavAccess() {
   const token = useAppSelector((s) => s.auth.token)
   const role = useAppSelector((s) => s.auth.role)
@@ -176,6 +184,32 @@ export function useNavAccess() {
     [fullAccess, allowedViewRoutes],
   )
 
+  const getRouteActionFlags = useCallback(
+    (pathname: string, search: string): RouteActionFlags => {
+      if (fullAccess || bypass) {
+        return { canView: true, canCreate: true, canUpdate: true, canDelete: true }
+      }
+      const canView = pathnameAllowed(pathname, search)
+      if (!canView) {
+        return { canView: false, canCreate: false, canUpdate: false, canDelete: false }
+      }
+      const items = q.data?.items ?? []
+      let canCreate = false
+      let canUpdate = false
+      let canDelete = false
+      for (const i of items) {
+        const route = i.route?.trim()
+        if (!route) continue
+        if (!permissionItemCoversPath(pathname, search, route)) continue
+        if (i.canCreate) canCreate = true
+        if (i.canUpdate) canUpdate = true
+        if (i.canDelete) canDelete = true
+      }
+      return { canView, canCreate, canUpdate, canDelete }
+    },
+    [fullAccess, bypass, pathnameAllowed, q.data?.items],
+  )
+
   return {
     bypass,
     navSettled,
@@ -185,6 +219,7 @@ export function useNavAccess() {
     canViewDashboard,
     pathnameAllowed,
     linkAllowed,
+    getRouteActionFlags,
     isFetchingPermissions: !skip && q.isFetching,
   }
 }

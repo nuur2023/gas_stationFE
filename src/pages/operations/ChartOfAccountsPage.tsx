@@ -14,12 +14,14 @@ import { DataTable, type Column } from '../../components/DataTable'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
+import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import { useDebouncedValue } from '../../lib/hooks'
 import { filterAccountsForViewer } from '../../lib/accountScope'
 import { showBusinessPickerInForms } from '../../lib/stationContext'
 import type { Account, AccountWriteRequest } from '../../types/models'
 
 export function ChartOfAccountsPage() {
+  const { canCreate: routeCanCreate, canUpdate: routeCanUpdate } = usePagePermissionActions()
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const showBizPicker = showBusinessPickerInForms(role)
@@ -344,7 +346,8 @@ export function ChartOfAccountsPage() {
               <button
                 type="button"
                 onClick={generateDefaultParents}
-                disabled={generating}
+                disabled={generating || !routeCanCreate}
+                title={!routeCanCreate ? 'No create permission' : undefined}
                 className="w-full shrink-0 whitespace-normal rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-sm font-medium leading-snug text-emerald-700 disabled:opacity-50 sm:w-auto sm:max-w-[16rem] sm:text-center lg:max-w-xs xl:max-w-none"
               >
                 {generating ? 'Generating...' : 'Auto-generate parent accounts'}
@@ -472,7 +475,13 @@ export function ChartOfAccountsPage() {
           </button>
           <button
             type="button"
-            disabled={creating || updating || !canSubmitCreate}
+            disabled={
+              creating ||
+              updating ||
+              !canSubmitCreate ||
+              (editing ? !routeCanUpdate : !routeCanCreate)
+            }
+            title={editing ? (!routeCanUpdate ? 'No update permission' : undefined) : !routeCanCreate ? 'No create permission' : undefined}
             onClick={save}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >

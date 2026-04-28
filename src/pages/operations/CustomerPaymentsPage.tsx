@@ -12,12 +12,14 @@ import { DataTable, type Column } from '../../components/DataTable'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
+import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import { useDebouncedValue } from '../../lib/hooks'
 import { showBusinessPickerInForms } from '../../lib/stationContext'
 import { formatDecimal } from '../../lib/formatNumber'
 import type { CustomerPayment } from '../../types/models'
 
 export function CustomerPaymentsPage() {
+  const { canCreate: routeCanCreate } = usePagePermissionActions()
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const showBizPicker = showBusinessPickerInForms(role)
@@ -119,7 +121,7 @@ export function CustomerPaymentsPage() {
   ]
 
   async function save() {
-    if (!customerFuelGivenId || !amountPaid.trim()) return
+    if (!routeCanCreate || !customerFuelGivenId || !amountPaid.trim()) return
     await createPayment({
       customerFuelGivenId,
       amountPaid: amountPaid.trim(),
@@ -236,7 +238,15 @@ export function CustomerPaymentsPage() {
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">Cancel</button>
-          <button type="button" onClick={save} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Save payment</button>
+          <button
+            type="button"
+            disabled={!routeCanCreate}
+            title={!routeCanCreate ? 'No create permission' : undefined}
+            onClick={save}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Save payment
+          </button>
         </div>
       </Modal>
       {deleteDialog}

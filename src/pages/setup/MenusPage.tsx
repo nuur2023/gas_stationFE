@@ -61,98 +61,52 @@ function isDefaultNavSatisfied(menus: Menu[], subs: SubMenu[], nav: NavBlock[]):
   return true
 }
 
+/** Matches app sidebar: Operations, Management, Administration, Reports, Accounting, Financial Report, Main setup. */
 const DEFAULT_NAV: NavBlock[] = [
   {
     menu: { name: 'Dashboard', route: '/' },
     submenus: [{ name: 'Dashboard', route: '/' }],
   },
   {
-    menu: { name: 'Expenses', route: '/expenses' },
-    submenus: [{ name: 'Expenses', route: '/expenses' }],
-  },
-  {
-    menu: { name: 'Inventory', route: '/inventory' },
-    submenus: [{ name: 'Inventory', route: '/inventory' }],
-  },
-  {
-    menu: { name: 'Rates', route: '/rates' },
-    submenus: [{ name: 'Rates', route: '/rates' }],
-  },
-  {
-    menu: { name: 'Generator usage', route: '/generator-usage' },
-    submenus: [{ name: 'Generator usage', route: '/generator-usage' }],
-  },
-  {
-    menu: { name: 'DippingPump', route: '/dipping-pumps' },
-    submenus: [{ name: 'DippingPump', route: '/dipping-pumps' }],
-  },
-  {
-    menu: { name: 'Pumps', route: '/pumps' },
+    menu: { name: 'Operations', route: '/operations' },
     submenus: [
+      { name: 'Fuel Sales', route: '/inventory' },
+      { name: 'Customers', route: '/customer-fuel-givens' },
+      { name: 'Liter Received', route: '/liter-received' },
+      { name: 'Expenses', route: '/expenses' },
+      { name: 'Generators', route: '/generator-usage' },
+      { name: 'Payments', route: '/accounting/customer-payments' },
+    ],
+  },
+  {
+    menu: { name: 'Management', route: '/management' },
+    submenus: [
+      { name: 'Fuel Types', route: '/setup/fuel-types' },
+      { name: 'Pricing', route: '/setup/fuel-prices' },
+      { name: 'Rates', route: '/rates' },
+      { name: 'Tank (Dipping)', route: '/dipping' },
       { name: 'Pumps', route: '/pumps' },
       { name: 'Nozzles', route: '/nozzles' },
+      { name: 'DippingPump', route: '/dipping-pumps' },
+      { name: 'Suppliers', route: '/suppliers' },
+      { name: 'Purchases', route: '/purchases' },
     ],
   },
   {
-    menu: { name: 'Dipping', route: '/dipping' },
-    submenus: [{ name: 'Dipping', route: '/dipping' }],
-  },
-  {
-    menu: { name: 'Liter received', route: '/liter-received' },
-    submenus: [{ name: 'Liter received', route: '/liter-received' }],
-  },
-
-  // add purchases menu
-  {
-    menu: { name: 'Purchases', route: '/purchases' },
-    submenus: [{ name: 'Purchases', route: '/purchases' }],
-  },
-  // ad suppliers menu
-  {
-    menu: { name: 'Suppliers', route: '/suppliers' },
-    submenus: [{ name: 'Suppliers', route: '/suppliers' }],
-  },
-  // addd customers menu
-  {
-    menu: { name: 'Fuel givens', route: '/customer-fuel-givens' },
-    submenus: [{ name: 'Fuel givens', route: '/customer-fuel-givens' }],
-  },
-
-  // add payments
-  {
-    menu: { name: 'Payments', route: '/accounting/customer-payments' },
-    submenus: [{ name: 'Payments', route: '/accounting/customer-payments' }],
-  },
-
-  // Add accounting menu
-  {
-    menu: { name: 'Accounting', route: '/accounting' },
+    menu: { name: 'Administration', route: '/administration' },
     submenus: [
-      { name: 'Accounts', route: '/accounting/accounts' },
-      { name: 'Charts of accounts', route: '/accounting/charts-of-accounts' },
-      { name: 'Manual journal entry', route: '/accounting/manual-journal-entry' },
+      { name: 'Users', route: '/setup/users' },
+      { name: 'Assigning Station', route: '/setup/business-users' },
+      { name: 'Permissions', route: '/setup/permissions' },
+      { name: 'Settings', route: '/setup/settings' },
     ],
   },
-  // add financial reports menu
-  {
-    menu: { name: 'Financial reports', route: '/financial-reports' },
-    submenus: [
-      { name: 'General Ledger', route: '/financial-reports/general-ledger' },
-      { name: 'Trial balance', route: '/financial-reports/trial-balance' },
-      { name: 'Profit and loss', route: '/financial-reports/profit-and-loss' },
-      { name: 'Balance sheet', route: '/financial-reports/balance-sheet' },
-      { name: 'Customer balances', route: '/financial-reports/customer-balances' },
-      { name: 'Supplier balances', route: '/financial-reports/supplier-balances' },
-      { name: 'Daily cash flow report', route: '/financial-reports/daily-cash-flow' },
-    ],
-  },
-  // Reports
   {
     menu: { name: 'Reports', route: '/reports' },
     submenus: [
       { name: 'Liter received', route: '/reports/liter-received' },
       { name: 'Daily cash sales report', route: '/reports/daily-cash-sales' },
-      { name: 'Cash out daily (expenses)', route: '/reports/cash-out-daily' },
+      { name: 'Cash out daily', route: '/reports/cash-out-daily' },
       { name: 'Daily given fuel', route: '/reports/daily-fuel-given' },
       { name: 'Generator usage report', route: '/reports/generator-usage' },
       { name: 'General daily report', route: '/reports/general-daily' },
@@ -161,23 +115,40 @@ const DEFAULT_NAV: NavBlock[] = [
     ],
   },
   {
+    menu: { name: 'Accounting', route: '/accounting' },
+    submenus: [
+      { name: 'Accounts', route: '/accounting/accounts' },
+      { name: 'Charts of accounts', route: '/accounting/charts-of-accounts' },
+      { name: 'Manual journal entry', route: '/accounting/manual-journal-entry' },
+    ],
+  },
+  {
+    menu: { name: 'Financial Report', route: '/financial-reports' },
+    submenus: [
+      { name: 'Trial balance', route: '/financial-reports/trial-balance' },
+      { name: 'General ledger', route: '/financial-reports/general-ledger' },
+      { name: 'Profit and loss', route: '/financial-reports/profit-and-loss' },
+      { name: 'Balance sheet', route: '/financial-reports/balance-sheet' },
+      { name: 'Customer balances', route: '/financial-reports/customer-balances' },
+      { name: 'Supplier balances', route: '/financial-reports/supplier-balances' },
+      { name: 'Daily cash flow', route: '/financial-reports/daily-cash-flow' },
+    ],
+  },
+  {
     menu: { name: 'Main setup', route: '/setup' },
     submenus: [
+      { name: 'Business', route: '/setup/businesses' },
       { name: 'Roles', route: '/setup/roles' },
       { name: 'Users', route: '/setup/users' },
-      { name: 'Assigning Station', route: '/setup/business-users' },
-      { name: 'Businesses', route: '/setup/businesses' },
       { name: 'Stations', route: '/stations' },
+      { name: 'Assigning Station', route: '/setup/business-users' },
       { name: 'Menus', route: '/setup/menus' },
       { name: 'Submenus', route: '/setup/submenus' },
-      { name: 'Permissions', route: '/setup/permissions' },
-      { name: 'Fuel types', route: '/setup/fuel-types' },
       { name: 'Currencies', route: '/setup/currencies' },
-      { name: 'Fuel prices', route: '/setup/fuel-prices' },
+      { name: 'Permissions', route: '/setup/permissions' },
       { name: 'Settings', route: '/setup/settings' },
     ],
   },
- 
 ]
 
 export function MenusPage() {

@@ -14,6 +14,7 @@ import { DataTable, type Column } from "../../components/DataTable";
 import { FormSelect, type SelectOption } from "../../components/FormSelect";
 import { Modal } from "../../components/Modal";
 import { useDeleteConfirm } from "../../hooks/useDeleteConfirm";
+import { usePagePermissionActions } from "../../hooks/usePagePermissionActions";
 import { useDebouncedValue } from "../../lib/hooks";
 import { openPurchaseInvoicePdf } from "../../lib/purchaseInvoicePdf";
 import type { PurchaseItem, PurchaseLineWrite } from "../../types/models";
@@ -49,6 +50,7 @@ function isLineValid(line: PurchaseLineWrite): boolean {
 }
 
 export function PurchaseDetailPage() {
+  const { canUpdate: routeCanUpdate } = usePagePermissionActions();
   const { purchaseId } = useParams<{ purchaseId: string }>();
   const id = Number(purchaseId);
   const role = useAppSelector((s) => s.auth.role);
@@ -477,8 +479,12 @@ export function PurchaseDetailPage() {
                 <button
                   type="submit"
                   disabled={
-                    !isLineValid(recalcLine(draft)) || lineSaving || deleting
+                    !isLineValid(recalcLine(draft)) ||
+                    lineSaving ||
+                    deleting ||
+                    !routeCanUpdate
                   }
+                  title={!routeCanUpdate ? "No update permission" : undefined}
                   className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
                   {lineSaving ? "Saving…" : "Save"}
