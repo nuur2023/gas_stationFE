@@ -12,8 +12,8 @@ export function LoginPage() {
   const dispatch = useAppDispatch()
   const [login, { isLoading }] = useLoginMutation()
 
-  const [emailOrPhone, setEmailOrPhone] = useState('superadmin@gmail.com')
-  const [password, setPassword] = useState('SuperAdmin@123')
+  const [emailOrPhone, setEmailOrPhone] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
