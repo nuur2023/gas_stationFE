@@ -74,7 +74,13 @@ function mapAll(tree: Menu[], fn: () => Flags): Record<string, Flags> {
 
 function isReportPath(path: string): boolean {
   const p = path.trim().toLowerCase()
-  return p === '/reports' || p === '/financial-reports' || p.startsWith('/reports/') || p.startsWith('/financial-reports/')
+  return (
+    p === '/setup/settings' ||
+    p === '/reports' ||
+    p === '/financial-reports' ||
+    p.startsWith('/reports/') ||
+    p.startsWith('/financial-reports/')
+  )
 }
 
 function isReportMenu(menu: Pick<Menu, 'route'>): boolean {

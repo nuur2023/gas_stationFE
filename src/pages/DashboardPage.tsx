@@ -21,7 +21,7 @@ import {
 } from '../app/api/apiSlice'
 import { useAppSelector } from '../app/hooks'
 import { useNavAccess } from '../hooks/useNavAccess'
-import { formatCurrency, formatDecimal } from '../lib/formatNumber'
+import { formatDecimal } from '../lib/formatNumber'
 
 type FuelKind = 'petrol' | 'diesel'
 
