@@ -24,6 +24,7 @@ import {
   Users,
   UserSquare2,
   Wallet,
+  X,
   Zap,
   UserRoundPlus,
 } from 'lucide-react'
@@ -113,13 +114,24 @@ const MAIN_SETUP_CHILDREN: FlyoutItem[] = [
 interface SidebarProps {
   collapsed: boolean
   onToggleCollapse: () => void
+  isMobile: boolean
+  onMobileClose: () => void
   userName: string | null
   userEmail: string | null
   role: string | null
   stationName: string
 }
 
-export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role, stationName }: SidebarProps) {
+export function Sidebar({
+  collapsed,
+  onToggleCollapse,
+  isMobile,
+  onMobileClose,
+  userName,
+  userEmail,
+  role,
+  stationName,
+}: SidebarProps) {
   const location = useLocation()
   const { linkAllowed, canViewDashboard } = useNavAccess()
   const isAdminUser = role?.trim().toLowerCase() === 'admin'
@@ -156,13 +168,13 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
     () => MAIN_SETUP_CHILDREN.filter((x) => linkAllowed(x.to)),
     [linkAllowed],
   )
-  const [setupOpen, setSetupOpen] = useState(true)
-  const [reportsOpen, setReportsOpen] = useState(true)
-  const [accountingOpen, setAccountingOpen] = useState(true)
-  const [operationsOpen, setOperationsOpen] = useState(true)
-  const [managementOpen, setManagementOpen] = useState(true)
-  const [administrationOpen, setAdministrationOpen] = useState(true)
-  const [financialReportsOpen, setFinancialReportsOpen] = useState(true)
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [reportsOpen, setReportsOpen] = useState(false)
+  const [accountingOpen, setAccountingOpen] = useState(false)
+  const [operationsOpen, setOperationsOpen] = useState(false)
+  const [managementOpen, setManagementOpen] = useState(false)
+  const [administrationOpen, setAdministrationOpen] = useState(false)
+  const [financialReportsOpen, setFinancialReportsOpen] = useState(false)
   const [hoverSetup, setHoverSetup] = useState(false)
   const [hoverReports, setHoverReports] = useState(false)
   const [hoverAccounting, setHoverAccounting] = useState(false)
@@ -292,6 +304,49 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
   }, [])
 
   const profileTitle = [userName, userEmail, role].filter(Boolean).join(' · ') || 'Profile'
+  const closeAllMenus = useCallback(() => {
+    setSetupOpen(false)
+    setReportsOpen(false)
+    setAccountingOpen(false)
+    setOperationsOpen(false)
+    setManagementOpen(false)
+    setAdministrationOpen(false)
+    setFinancialReportsOpen(false)
+  }, [])
+
+  const toggleOnlyMenu = useCallback(
+    (menu: 'setup' | 'reports' | 'accounting' | 'operations' | 'management' | 'administration' | 'financialReports') => {
+      const wasOpen =
+        (menu === 'setup' && setupOpen) ||
+        (menu === 'reports' && reportsOpen) ||
+        (menu === 'accounting' && accountingOpen) ||
+        (menu === 'operations' && operationsOpen) ||
+        (menu === 'management' && managementOpen) ||
+        (menu === 'administration' && administrationOpen) ||
+        (menu === 'financialReports' && financialReportsOpen)
+
+      closeAllMenus()
+      if (!wasOpen) {
+        if (menu === 'setup') setSetupOpen(true)
+        if (menu === 'reports') setReportsOpen(true)
+        if (menu === 'accounting') setAccountingOpen(true)
+        if (menu === 'operations') setOperationsOpen(true)
+        if (menu === 'management') setManagementOpen(true)
+        if (menu === 'administration') setAdministrationOpen(true)
+        if (menu === 'financialReports') setFinancialReportsOpen(true)
+      }
+    },
+    [
+      accountingOpen,
+      administrationOpen,
+      closeAllMenus,
+      financialReportsOpen,
+      managementOpen,
+      operationsOpen,
+      reportsOpen,
+      setupOpen,
+    ],
+  )
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     cn(
@@ -316,11 +371,18 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
         )}
         <button
           type="button"
-          onClick={onToggleCollapse}
+          onClick={isMobile ? onMobileClose : onToggleCollapse}
           className="ml-auto rounded-lg p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white"
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={isMobile ? 'Close menu' : collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={isMobile ? 'Close menu' : collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          {collapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronDown className="h-5 w-5 rotate-[-90deg]" />}
+          {isMobile ? (
+            <X className="h-5 w-5" />
+          ) : collapsed ? (
+            <ChevronRight className="h-5 w-5" />
+          ) : (
+            <ChevronDown className="h-5 w-5 rotate-[-90deg]" />
+          )}
         </button>
       </div>
 
@@ -335,7 +397,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
           <button
             ref={operationsAnchorRef}
             type="button"
-            onClick={() => !collapsed && setOperationsOpen((o) => !o)}
+            onClick={() => !collapsed && toggleOnlyMenu('operations')}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
           >
             <Fuel className="h-5 w-5 shrink-0" />
@@ -390,7 +452,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
           <button
             ref={managementAnchorRef}
             type="button"
-            onClick={() => !collapsed && setManagementOpen((o) => !o)}
+            onClick={() => !collapsed && toggleOnlyMenu('management')}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
           >
             <Building2 className="h-5 w-5 shrink-0" />
@@ -446,7 +508,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
           <button
             ref={administrationAnchorRef}
             type="button"
-            onClick={() => !collapsed && setAdministrationOpen((o) => !o)}
+            onClick={() => !collapsed && toggleOnlyMenu('administration')}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
           >
             <Shield className="h-5 w-5 shrink-0" />
@@ -501,7 +563,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
           <button
             ref={reportsAnchorRef}
             type="button"
-            onClick={() => !collapsed && setReportsOpen((o) => !o)}
+            onClick={() => !collapsed && toggleOnlyMenu('reports')}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
           >
             <FileText className="h-5 w-5 shrink-0" />
@@ -556,7 +618,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
           <button
             ref={accountingAnchorRef}
             type="button"
-            onClick={() => !collapsed && setAccountingOpen((o) => !o)}
+            onClick={() => !collapsed && toggleOnlyMenu('accounting')}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
           >
             <ListTree className="h-5 w-5 shrink-0" />
@@ -611,7 +673,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
           <button
             ref={financialReportsAnchorRef}
             type="button"
-            onClick={() => !collapsed && setFinancialReportsOpen((o) => !o)}
+            onClick={() => !collapsed && toggleOnlyMenu('financialReports')}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
           >
             <BarChart2 className="h-5 w-5 shrink-0" />
@@ -668,7 +730,7 @@ export function Sidebar({ collapsed, onToggleCollapse, userName, userEmail, role
           <button
             ref={setupAnchorRef}
             type="button"
-            onClick={() => !collapsed && setSetupOpen((o) => !o)}
+            onClick={() => !collapsed && toggleOnlyMenu('setup')}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
           >
             <ListTree className="h-5 w-5 shrink-0" />

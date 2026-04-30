@@ -1,12 +1,13 @@
-import { Fuel, Menu, UserCircle } from 'lucide-react'
+import { Fuel, Menu, UserCircle, X } from 'lucide-react'
 
 interface NavbarProps {
   businessName: string
+  mobileNavOpen: boolean
   onMenuClick: () => void
   onProfileClick: () => void
 }
 
-export function Navbar({ businessName, onMenuClick, onProfileClick }: NavbarProps) {
+export function Navbar({ businessName, mobileNavOpen, onMenuClick, onProfileClick }: NavbarProps) {
   return (
     <header className="relative z-30 flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur">
       <div className="flex min-w-0 items-center gap-2">
@@ -14,9 +15,9 @@ export function Navbar({ businessName, onMenuClick, onProfileClick }: NavbarProp
           type="button"
           onClick={onMenuClick}
           className="shrink-0 rounded-lg p-2 text-slate-600 hover:bg-slate-100 md:hidden"
-          aria-label="Open menu"
+          aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
         >
-          <Menu className="h-6 w-6" />
+          {mobileNavOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
           <Fuel className="h-5 w-5" />

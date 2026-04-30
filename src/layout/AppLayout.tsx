@@ -63,6 +63,8 @@ export function AppLayout() {
         <Sidebar
           collapsed={isMd ? collapsed : false}
           onToggleCollapse={() => setCollapsed((c) => !c)}
+          isMobile={!isMd}
+          onMobileClose={() => setMobileNavOpen(false)}
           userName={name}
           userEmail={email}
           role={role}
@@ -72,7 +74,8 @@ export function AppLayout() {
       <div className="relative z-0 flex min-w-0 flex-1 flex-col">
         <Navbar
           businessName={businessName}
-          onMenuClick={() => setMobileNavOpen(true)}
+          mobileNavOpen={mobileNavOpen}
+          onMenuClick={() => setMobileNavOpen((open) => !open)}
           onProfileClick={() => setProfileOpen(true)}
         />
         <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
