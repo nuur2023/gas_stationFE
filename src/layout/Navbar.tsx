@@ -1,4 +1,5 @@
 import { Fuel, Menu, UserCircle, X } from 'lucide-react'
+import { NotificationBell } from '../components/NotificationBell'
 
 interface NavbarProps {
   businessName: string
@@ -30,13 +31,7 @@ export function Navbar({ businessName, mobileNavOpen, onMenuClick, onProfileClic
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {/* <button
-          type="button"
-          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-          title="Notifications"
-        >
-          <Bell className="h-5 w-5" />
-        </button> */}
+        <NotificationBell />
         <button
           type="button"
           onClick={onProfileClick}

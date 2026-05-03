@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import {
   useCreateDippingPumpMutation,
+  useDeleteDippingPumpMutation,
   useGetBusinessesQuery,
   useGetDippingPumpsByBusinessQuery,
   useGetDippingsQuery,
@@ -9,11 +10,13 @@ import {
   useGetNozzlesByBusinessQuery,
   useGetPumpsQuery,
   useGetStationsQuery,
+  useUpdateDippingPumpMutation,
 } from '../../app/api/apiSlice'
 import { useAppSelector } from '../../app/hooks'
 import { DataTable, type Column } from '../../components/DataTable'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
+import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
 import { adminNeedsSettingsStation, SETTINGS_STATION_HINT, showBusinessPickerInForms, useEffectiveStationId } from '../../lib/stationContext'
 import type { DippingPump } from '../../types/models'
 
@@ -97,8 +100,12 @@ export function DippingPumpsPage() {
     return m
   }, [listNozzles])
 
-  const [createDippingPump] = useCreateDippingPumpMutation()
+  const [createDippingPump, { isLoading: creating }] = useCreateDippingPumpMutation()
+  const [updateDippingPump, { isLoading: updating }] = useUpdateDippingPumpMutation()
+  const [deleteDippingPump] = useDeleteDippingPumpMutation()
+  const { requestDelete, dialog: deleteDialog } = useDeleteConfirm()
   const [open, setOpen] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [stationId, setStationId] = useState(0)
   const [pumpId, setPumpId] = useState(0)
   const [nozzleId, setNozzleId] = useState(0)
@@ -170,6 +177,15 @@ export function DippingPumpsPage() {
     [nozzleById, dippingNameById, dippingFuelTypeNameById, stationNameById],
   )
 
+  function closeModal() {
+    setOpen(false)
+    setEditingId(null)
+    setStationId(0)
+    setPumpId(0)
+    setNozzleId(0)
+    setDippingId(0)
+  }
+
   async function saveLink(e: React.FormEvent) {
     e.preventDefault()
     const resolvedStation = showStationFieldInModal
@@ -178,20 +194,33 @@ export function DippingPumpsPage() {
         ? effectiveStationId
         : 0
     if (effectiveBusinessId <= 0 || resolvedStation <= 0 || nozzleId <= 0 || dippingId <= 0) return
-    await createDippingPump({
+    const body = {
       stationId: resolvedStation,
       nozzleId,
       dippingId,
       ...(showBizPicker ? { businessId: effectiveBusinessId } : {}),
-    }).unwrap()
-    setOpen(false)
-    setStationId(0)
-    setPumpId(0)
-    setNozzleId(0)
-    setDippingId(0)
+    }
+    if (editingId != null) {
+      await updateDippingPump({ id: editingId, body }).unwrap()
+    } else {
+      await createDippingPump(body).unwrap()
+    }
+    closeModal()
+  }
+
+  function openEditModal(row: DippingPump) {
+    setEditingId(row.id)
+    setBusinessId(row.businessId)
+    setStationId(row.stationId)
+    const n = nozzleById.get(row.nozzleId)
+    setPumpId(n?.pumpId ?? 0)
+    setNozzleId(row.nozzleId)
+    setDippingId(row.dippingId)
+    setOpen(true)
   }
 
   function openCreateModal() {
+    setEditingId(null)
     setOpen(true)
     setPumpId(0)
     setNozzleId(0)
@@ -229,10 +258,20 @@ export function DippingPumpsPage() {
         selectedIds={selectedIds}
         onSelectedIdsChange={setSelectedIds}
         onAdd={openCreateModal}
-        onDeleteOne={() => {}}
+        onEdit={openEditModal}
+        onDeleteOne={(id) => {
+          const row = links.find((l) => l.id === id)
+          const label = row ? `Nozzle ${row.nozzleId}` : `Link #${id}`
+          requestDelete({
+            title: 'Delete dipping link',
+            description: `Remove ${label}? This does not delete the nozzle or dipping.`,
+            action: async () => {
+              await deleteDippingPump(id).unwrap()
+            },
+          })
+        }}
         onDeleteSelected={() => {}}
         showRowSelection={false}
-        showRowActions={false}
         extraToolbar={
           isSuperAdmin ? (
             <div className="w-full min-w-0 sm:min-w-[14rem] sm:max-w-xs lg:w-64 lg:max-w-none">
@@ -249,8 +288,14 @@ export function DippingPumpsPage() {
           ) : null
         }
       />
+      {deleteDialog}
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Add DippingPump" className="max-w-xl">
+      <Modal
+        open={open}
+        onClose={closeModal}
+        title={editingId != null ? 'Edit DippingPump' : 'Add DippingPump'}
+        className="max-w-xl"
+      >
         <form onSubmit={saveLink} className="space-y-3">
           {showBizPicker && (
             <div>
@@ -265,6 +310,7 @@ export function DippingPumpsPage() {
                   setNozzleId(0)
                   setDippingId(0)
                 }}
+                isDisabled={editingId != null}
               />
             </div>
           )}
@@ -323,17 +369,25 @@ export function DippingPumpsPage() {
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">
+            <button type="button" onClick={closeModal} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">
               Cancel
             </button>
             <button
               type="submit"
-              disabled={effectiveBusinessId <= 0 || stationId <= 0 || nozzleId <= 0 || dippingId <= 0 || needsWorkspaceStation}
+              disabled={
+                effectiveBusinessId <= 0 ||
+                stationId <= 0 ||
+                nozzleId <= 0 ||
+                dippingId <= 0 ||
+                needsWorkspaceStation ||
+                creating ||
+                updating
+              }
               className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               <span className="inline-flex items-center gap-2">
                 <Plus className="h-4 w-4" />
-                Save
+                {creating || updating ? 'Saving…' : 'Save'}
               </span>
             </button>
           </div>

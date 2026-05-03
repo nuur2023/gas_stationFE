@@ -99,6 +99,27 @@ function legacyFinancialQueryAllowed(pathname: string, search: string, set: Set<
   return false
 }
 
+function inventoryTransferAliasAllowed(pathname: string, search: string, set: Set<string>): boolean {
+  if (pathname === '/transfers') {
+    for (const r of set) {
+      if (permissionRouteMatches('/fuel-inventory/transfers', search, r)) return true
+    }
+  }
+  if (pathname === '/fuel-inventory/transfers') {
+    for (const r of set) {
+      if (permissionRouteMatches('/transfers', search, r)) return true
+    }
+  }
+  if (pathname === '/transfer-audit-trail') {
+    if (set.has('/transfer-audit-trail')) return true
+    for (const r of set) {
+      if (permissionRouteMatches('/transfers', search, r)) return true
+      if (permissionRouteMatches('/fuel-inventory/transfers', search, r)) return true
+    }
+  }
+  return false
+}
+
 /** Only SuperAdmin bypasses permission rows. */
 function bypassPermissionNav(role: string | null): boolean {
   return role === 'SuperAdmin'
@@ -157,7 +178,10 @@ export function useNavAccess() {
           return hasFinancialPermissionForDailyCashFlow(set)
         }
       }
+      if (inventoryTransferAliasAllowed(pathname, search, set)) return true
       if (legacyFinancialQueryAllowed(pathname, search, set)) return true
+      if (pathname === '/accounting/chart-of-accounts-tree' && set.has('/accounting/accounts')) return true
+      if (pathname === '/supplier-payments' && set.has('/purchases')) return true
       return false
     },
     [fullAccess, allowedViewRoutes],
@@ -178,7 +202,10 @@ export function useNavAccess() {
           return hasFinancialPermissionForDailyCashFlow(set)
         }
       }
+      if (inventoryTransferAliasAllowed(pathname, search, set)) return true
       if (pathname === '/reports/financial' && legacyFinancialQueryAllowed(pathname, search, set)) return true
+      if (pathname === '/accounting/chart-of-accounts-tree' && set.has('/accounting/accounts')) return true
+      if (pathname === '/supplier-payments' && set.has('/purchases')) return true
       return false
     },
     [fullAccess, allowedViewRoutes],

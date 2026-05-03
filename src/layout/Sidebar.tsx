@@ -3,21 +3,26 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   AlertCircle,
   BarChart2,
+  Banknote,
   Beaker,
   Building2,
   ChevronDown,
   ChevronRight,
-  Contact,
   CreditCard,
   Cylinder,
   Droplets,
   FileText,
   Fuel,
+  GitBranch,
   LayoutDashboard,
   Link2,
   ListTree,
   MapPin,
   Percent,
+  Repeat2,
+  CalendarRange,
+  ArrowRightLeft,
+  ClipboardList,
   Shield,
   Truck,
   User,
@@ -54,14 +59,18 @@ const OPERATIONS_CHILDREN: FlyoutItem[] = [
 
 const MANAGEMENT_CHILDREN: FlyoutItem[] = [
   { to: '/setup/fuel-types', label: 'Fuel Types', icon: Fuel },
+  { to: '/fuel-inventory', label: 'Pool', icon: Cylinder },
+  { to: '/transfers', label: 'Transfer to station', icon: ArrowRightLeft },
+  { to: '/transfer-audit-trail', label: 'Transfer audit trail', icon: ClipboardList },
   { to: '/setup/fuel-prices', label: 'Pricing', icon: Droplets },
   { to: '/rates', label: 'Rates', icon: Percent },
   { to: '/dipping', label: 'Tank (Dipping)', icon: Beaker },
   { to: '/pumps', label: 'Pumps', icon: Fuel },
   { to: '/nozzles', label: 'Nozzles', icon: Link2 },
   { to: '/dipping-pumps', label: 'DippingPump', icon: Link2 },
-  { to: '/suppliers', label: 'Suppliers', icon: Contact },
+  { to: '/suppliers', label: 'Suppliers', icon: Truck },
   { to: '/purchases', label: 'Purchases', icon: Cylinder },
+  { to: '/supplier-payments', label: 'Supplier payments', icon: Banknote },
 ]
 
 const ADMINISTRATION_CHILDREN: FlyoutItem[] = [
@@ -73,8 +82,11 @@ const ADMINISTRATION_CHILDREN: FlyoutItem[] = [
 
 const ACCOUNTING_CHILDREN: FlyoutItem[] = [
   { to: '/accounting/accounts', label: 'Accounts', icon: Wallet },
+  { to: '/accounting/chart-of-accounts-tree', label: 'COA tree', icon: GitBranch },
   { to: '/accounting/charts-of-accounts', label: 'Charts of accounts', icon: ListTree },
   { to: '/accounting/manual-journal-entry', label: 'Manual journal entry', icon: FileText },
+  { to: '/accounting/recurring-journals', label: 'Recurring journals', icon: Repeat2 },
+  { to: '/accounting/periods', label: 'Accounting periods', icon: CalendarRange },
 ]
 
 const FINANCIAL_REPORTS_CHILDREN: FlyoutItem[] = [
@@ -120,6 +132,8 @@ interface SidebarProps {
   userEmail: string | null
   role: string | null
   stationName: string
+  /** Recurring journals awaiting user confirmation (confirm-when-due). */
+  recurringPendingCount?: number
 }
 
 export function Sidebar({
@@ -131,6 +145,7 @@ export function Sidebar({
   userEmail,
   role,
   stationName,
+  recurringPendingCount = 0,
 }: SidebarProps) {
   const location = useLocation()
   const { linkAllowed, canViewDashboard } = useNavAccess()
@@ -148,10 +163,13 @@ export function Sidebar({
     () => ADMINISTRATION_CHILDREN.filter((c) => linkAllowed(c.to)),
     [linkAllowed],
   )
-  const accountingChildren = useMemo(
-    () => ACCOUNTING_CHILDREN.filter((c) => linkAllowed(c.to)),
-    [linkAllowed],
-  )
+  const accountingChildren = useMemo(() => {
+    const base = ACCOUNTING_CHILDREN.filter((c) => linkAllowed(c.to))
+    if (recurringPendingCount <= 0) return base
+    return base.map((c) =>
+      c.to === '/accounting/recurring-journals' ? { ...c, badge: recurringPendingCount } : c,
+    )
+  }, [linkAllowed, recurringPendingCount])
   const financialReportsChildren = useMemo(() => {
     const hasModernCore = FINANCIAL_REPORT_CORE_PATHS.some((r) => linkAllowed(r))
     const hasLegacyCore = FINANCIAL_REPORT_LEGACY_CORE_ROUTES.some((r) => linkAllowed(r))
@@ -196,7 +214,6 @@ export function Sidebar({
   const managementAnchorRef = useRef<HTMLButtonElement>(null)
   const administrationAnchorRef = useRef<HTMLButtonElement>(null)
   const financialReportsAnchorRef = useRef<HTMLButtonElement>(null)
-
   const clearSetupTimer = () => {
     if (setupLeaveT.current) {
       clearTimeout(setupLeaveT.current)
@@ -315,7 +332,16 @@ export function Sidebar({
   }, [])
 
   const toggleOnlyMenu = useCallback(
-    (menu: 'setup' | 'reports' | 'accounting' | 'operations' | 'management' | 'administration' | 'financialReports') => {
+    (
+      menu:
+        | 'setup'
+        | 'reports'
+        | 'accounting'
+        | 'operations'
+        | 'management'
+        | 'administration'
+        | 'financialReports',
+    ) => {
       const wasOpen =
         (menu === 'setup' && setupOpen) ||
         (menu === 'reports' && reportsOpen) ||
@@ -486,7 +512,12 @@ export function Sidebar({
                 <NavLink
                   key={to}
                   to={to}
-                  end={to === '/pumps'}
+                  end={
+                    to === '/pumps' ||
+                    to === '/fuel-inventory' ||
+                    to === '/transfers' ||
+                    to === '/transfer-audit-trail'
+                  }
                   className={({ isActive }) =>
                     cn(
                       'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',
@@ -648,7 +679,7 @@ export function Sidebar({
 
           {!collapsed && accountingOpen && (
             <div className="ml-2 mt-1 space-y-0.5 border-l border-slate-700 pl-2">
-              {accountingChildren.map(({ to, label, icon: Icon }) => (
+              {accountingChildren.map(({ to, label, icon: Icon, badge }) => (
                 <NavLink
                   key={to}
                   to={to}
@@ -660,7 +691,12 @@ export function Sidebar({
                   }
                 >
                   <Icon className="h-4 w-4 shrink-0 opacity-80" />
-                  {label}
+                  <span className="flex-1">{label}</span>
+                  {badge != null && badge > 0 ? (
+                    <span className="min-w-[1.25rem] rounded-full bg-amber-500 px-1.5 py-0.5 text-center text-[10px] font-semibold text-slate-950">
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  ) : null}
                 </NavLink>
               ))}
             </div>

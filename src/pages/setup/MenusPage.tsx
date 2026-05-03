@@ -82,6 +82,9 @@ const DEFAULT_NAV: NavBlock[] = [
     menu: { name: 'Management', route: '/management' },
     submenus: [
       { name: 'Fuel Types', route: '/setup/fuel-types' },
+      { name: 'Pool', route: '/fuel-inventory' },
+      { name: 'Transfer to station', route: '/transfers' },
+      { name: 'Transfer audit trail', route: '/transfer-audit-trail' },
       { name: 'Pricing', route: '/setup/fuel-prices' },
       { name: 'Rates', route: '/rates' },
       { name: 'Tank (Dipping)', route: '/dipping' },
@@ -90,6 +93,7 @@ const DEFAULT_NAV: NavBlock[] = [
       { name: 'DippingPump', route: '/dipping-pumps' },
       { name: 'Suppliers', route: '/suppliers' },
       { name: 'Purchases', route: '/purchases' },
+      { name: 'Supplier payments', route: '/supplier-payments' },
     ],
   },
   {
@@ -118,8 +122,11 @@ const DEFAULT_NAV: NavBlock[] = [
     menu: { name: 'Accounting', route: '/accounting' },
     submenus: [
       { name: 'Accounts', route: '/accounting/accounts' },
+      { name: 'COA tree', route: '/accounting/chart-of-accounts-tree' },
       { name: 'Charts of accounts', route: '/accounting/charts-of-accounts' },
       { name: 'Manual journal entry', route: '/accounting/manual-journal-entry' },
+      { name: 'Recurring journals', route: '/accounting/recurring-journals' },
+      { name: 'Accounting periods', route: '/accounting/periods' },
     ],
   },
   {

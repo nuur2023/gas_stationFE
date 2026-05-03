@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Eye, Printer, Trash2 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
+  useCreateBusinessFuelInventoryCreditMutation,
   useCreatePurchaseMutation,
   useDeletePurchaseMutation,
   useGetBusinessesQuery,
@@ -17,6 +18,7 @@ import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
 import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
+import { useToast } from '../../components/ToastProvider'
 import { useDebouncedValue } from '../../lib/hooks'
 import { showBusinessPickerInForms } from '../../lib/stationContext'
 import { openPurchaseInvoicePdf } from '../../lib/purchaseInvoicePdf'
@@ -106,9 +108,11 @@ export function PurchasesPage() {
   )
 
   const [createPurchase, { isLoading: isCreating }] = useCreatePurchaseMutation()
+  const [createBusinessFuelCredit] = useCreateBusinessFuelInventoryCreditMutation()
   const [updatePurchase, { isLoading: isUpdating }] = useUpdatePurchaseMutation()
   const [deletePurchase] = useDeletePurchaseMutation()
   const [loadPurchase] = useLazyGetPurchaseQuery()
+  const { showSuccess, showError } = useToast()
   const saving = isCreating || isUpdating
 
   const businessOptions: SelectOption[] = useMemo(() => {
@@ -167,6 +171,7 @@ export function PurchasesPage() {
   const [status, setStatus] = useState<PurchaseStatus>('Unpaid')
   const [amountPaid, setAmountPaid] = useState('0')
   const [purchaseDate, setPurchaseDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [autoSaveBusinessPool, setAutoSaveBusinessPool] = useState(false)
   const [lines, setLines] = useState<FormLine[]>([])
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
@@ -180,6 +185,11 @@ export function PurchasesPage() {
     [],
   )
   const statusSel = statusOptions.find((o) => o.value === status) ?? null
+  const showAmountPaid = status !== 'Unpaid'
+
+  useEffect(() => {
+    if (status === 'Unpaid') setAmountPaid('0')
+  }, [status])
 
   const needsBusiness = showBizPicker ? formBusinessId == null || formBusinessId <= 0 : authBusinessId == null
 
@@ -192,9 +202,11 @@ export function PurchasesPage() {
   )
 
   const headerOk = !needsBusiness && supplierId > 0 && invoiceNo.trim().length > 0
+  const paidAmountOk =
+    status === 'Unpaid' || (Number.parseFloat(String(amountPaid).replace(',', '.')) || 0) > 0
   const hasCompleteLine = lines.some((l) => isLineComplete(stripLine(l)))
-  const canSaveCreate = headerOk && hasCompleteLine && fuelTypes.length > 0
-  const canSaveEdit = headerOk
+  const canSaveCreate = headerOk && paidAmountOk && hasCompleteLine && fuelTypes.length > 0
+  const canSaveEdit = headerOk && paidAmountOk
   const canSave = editing ? canSaveEdit : canSaveCreate
 
   function openCreate() {
@@ -205,6 +217,7 @@ export function PurchasesPage() {
     setStatus('Unpaid')
     setAmountPaid('0')
     setPurchaseDate(new Date().toISOString().slice(0, 10))
+    setAutoSaveBusinessPool(false)
     setLines([emptyLine(nextLineRid())])
     setOpen(true)
   }
@@ -246,12 +259,13 @@ export function PurchasesPage() {
       invoiceNo: invoiceNo.trim(),
       purchaseDate: new Date(purchaseDate + 'T12:00:00').toISOString(),
       status,
-      amountPaid,
+      amountPaid: status === 'Unpaid' ? '0' : amountPaid,
       ...(showBizPicker && formBusinessId != null ? { businessId: formBusinessId } : {}),
     }
     try {
       if (editing) {
         await updatePurchase({ id: editing.id, body: header }).unwrap()
+        showSuccess('Purchase updated.')
         setOpen(false)
       } else {
         const itemsPayload = lines
@@ -259,6 +273,31 @@ export function PurchasesPage() {
           .map((l) => recalcLine(stripLine(l)))
         const body: PurchaseWriteRequest = { ...header, items: itemsPayload }
         await createPurchase(body).unwrap()
+        if (autoSaveBusinessPool && effectiveFormBusinessId != null && effectiveFormBusinessId > 0) {
+          const totalsByFuel = new Map<number, number>()
+          for (const item of itemsPayload) {
+            const liters = Number.parseFloat(String(item.liters).replace(',', '.'))
+            if (!Number.isFinite(liters) || liters <= 0) continue
+            totalsByFuel.set(item.fuelTypeId, (totalsByFuel.get(item.fuelTypeId) ?? 0) + liters)
+          }
+          try {
+            for (const [fuelTypeId, liters] of totalsByFuel.entries()) {
+              await createBusinessFuelCredit({
+                businessId: effectiveFormBusinessId,
+                fuelTypeId,
+                liters: String(liters),
+                date: new Date(purchaseDate + 'T12:00:00').toISOString(),
+                reference: invoiceNo.trim() || 'Auto credit from purchase',
+                note: `Auto credit from purchase ${invoiceNo.trim() || 'N/A'}`,
+              }).unwrap()
+            }
+            showSuccess('Purchase saved and business pool credited.')
+          } catch {
+            showError('Purchase saved, but auto-save to business pool failed for one or more fuel types.')
+          }
+        } else {
+          showSuccess('Purchase saved.')
+        }
         setOpen(false)
         navigate('/purchases')
       }
@@ -440,7 +479,7 @@ export function PurchasesPage() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-emerald-500/30 focus:ring-2 disabled:bg-slate-50"
               />
             </div>
-            <div>
+            <div className={!showAmountPaid ? 'md:col-span-2' : undefined}>
               <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
               <FormSelect
                 options={statusOptions}
@@ -450,16 +489,18 @@ export function PurchasesPage() {
                 isDisabled={saving}
               />
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Amount paid</label>
-              <input
-                value={amountPaid}
-                onChange={(e) => setAmountPaid(e.target.value)}
-                disabled={saving}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-emerald-500/30 focus:ring-2 disabled:bg-slate-50"
-                inputMode="decimal"
-              />
-            </div>
+            {showAmountPaid ? (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Amount paid</label>
+                <input
+                  value={amountPaid}
+                  onChange={(e) => setAmountPaid(e.target.value)}
+                  disabled={saving}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-emerald-500/30 focus:ring-2 disabled:bg-slate-50"
+                  inputMode="decimal"
+                />
+              </div>
+            ) : null}
           </div>
 
           <div>
@@ -472,6 +513,37 @@ export function PurchasesPage() {
               className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-emerald-500/30 focus:ring-2 disabled:bg-slate-50"
             />
           </div>
+
+          {!editing && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="mb-2 text-sm font-medium text-slate-700">Auto-save to business pool after purchase</p>
+              <div className="flex items-center gap-6 text-sm">
+                <label className="inline-flex items-center gap-2 text-slate-700">
+                  <input
+                    type="radio"
+                    name="auto-save-business-pool"
+                    checked={autoSaveBusinessPool}
+                    onChange={() => setAutoSaveBusinessPool(true)}
+                    disabled={saving}
+                  />
+                  Yes
+                </label>
+                <label className="inline-flex items-center gap-2 text-slate-700">
+                  <input
+                    type="radio"
+                    name="auto-save-business-pool"
+                    checked={!autoSaveBusinessPool}
+                    onChange={() => setAutoSaveBusinessPool(false)}
+                    disabled={saving}
+                  />
+                  No
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                When enabled, liters from purchase line items are automatically credited into the business fuel pool.
+              </p>
+            </div>
+          )}
 
           {!editing && (
             <div>

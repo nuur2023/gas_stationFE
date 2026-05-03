@@ -179,12 +179,38 @@ export function FinancialReportsPage() {
   const [trialPageSize, setTrialPageSize] = useState(50)
   const [trialSearch, setTrialSearch] = useState('')
   const [trialSelected, setTrialSelected] = useState<Set<number>>(new Set())
+  /** adjusted: exclude closing; unadjusted: exclude adjusting+closing; postclosing: all entries. */
+  const [reportTrialBalanceMode, setReportTrialBalanceMode] = useState<'adjusted' | 'unadjusted' | 'postclosing'>(
+    'adjusted',
+  )
+  const trialBalanceModeOptions: SelectOption[] = useMemo(
+    () => [
+      { value: 'adjusted', label: 'Adjusted (exclude closing)' },
+      { value: 'unadjusted', label: 'Unadjusted (excl. adjusting & closing)' },
+      { value: 'postclosing', label: 'Post-closing (all entries)' },
+    ],
+    [],
+  )
 
   const [plBusinessId, setPlBusinessId] = useState<number | null>(null)
   const [plStationId, setPlStationId] = useState<number | null>(null)
   const [ledgerBusinessId, setLedgerBusinessId] = useState<number | null>(null)
   const [ledgerStationId, setLedgerStationId] = useState<number | null>(null)
   const [ledgerAccountId, setLedgerAccountId] = useState<number | null>(null)
+
+  const accountIdFromUrl = useMemo(() => {
+    const raw = searchParams.get('accountId')
+    if (!raw) return null
+    const n = Number.parseInt(raw, 10)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }, [searchParams])
+
+  const businessIdFromUrl = useMemo(() => {
+    const raw = searchParams.get('businessId')
+    if (!raw) return null
+    const n = Number.parseInt(raw, 10)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }, [searchParams])
   const [bsBusinessId, setBsBusinessId] = useState<number | null>(null)
   const [bsStationId, setBsStationId] = useState<number | null>(null)
   const [customerBusinessId, setCustomerBusinessId] = useState<number | null>(null)
@@ -292,11 +318,18 @@ export function FinancialReportsPage() {
     if (!isSuperAdmin || (kind !== 'ledger' && kind !== 'daily-cash-flow')) return
     const items = businesses?.items ?? []
     if (items.length === 0) return
+    if (businessIdFromUrl != null && items.some((b) => b.id === businessIdFromUrl)) {
+      setLedgerBusinessId((prev) => {
+        if (prev != null && prev !== businessIdFromUrl) return prev
+        return businessIdFromUrl
+      })
+      return
+    }
     setLedgerBusinessId((prev) => {
       if (prev != null && items.some((b) => b.id === prev)) return prev
       return items[0].id
     })
-  }, [isSuperAdmin, kind, businesses?.items])
+  }, [isSuperAdmin, kind, businesses?.items, businessIdFromUrl])
   useEffect(() => {
     if (!isSuperAdmin || kind !== 'bs') return
     const items = businesses?.items ?? []
@@ -350,6 +383,7 @@ export function FinancialReportsPage() {
       from: from || undefined,
       to: to || undefined,
       stationId: reportStationId(trialStationId),
+      trialBalanceMode: reportTrialBalanceMode,
     },
     { skip: kind !== 'trial' || effectiveBusinessId <= 0 || needsReportStation },
   )
@@ -361,6 +395,7 @@ export function FinancialReportsPage() {
       from: from || undefined,
       to: to || undefined,
       stationId: reportStationId(ledgerStationId),
+      trialBalanceMode: reportTrialBalanceMode,
     },
     {
       skip:
@@ -376,6 +411,7 @@ export function FinancialReportsPage() {
       from: from || undefined,
       to: to || undefined,
       stationId: reportStationId(plStationId),
+      trialBalanceMode: reportTrialBalanceMode,
     },
     { skip: kind !== 'pl' || effectivePlBusinessId <= 0 || needsReportStation },
   )
@@ -384,6 +420,7 @@ export function FinancialReportsPage() {
       businessId: effectiveBsBusinessId,
       to: bsAsOf || undefined,
       stationId: reportStationId(bsStationId),
+      trialBalanceMode: reportTrialBalanceMode,
     },
     { skip: kind !== 'bs' || effectiveBsBusinessId <= 0 || needsReportStation },
   )
@@ -489,11 +526,18 @@ export function FinancialReportsPage() {
     if (kind !== 'ledger' && kind !== 'daily-cash-flow') return
     const items = ledgerAccountItemsFiltered
     if (items.length === 0) return
+    if (accountIdFromUrl != null && items.some((a) => a.id === accountIdFromUrl)) {
+      setLedgerAccountId((prev) => {
+        if (prev != null && prev !== accountIdFromUrl) return prev
+        return accountIdFromUrl
+      })
+      return
+    }
     setLedgerAccountId((prev) => {
       if (prev != null && items.some((a) => a.id === prev)) return prev
       return items[0].id
     })
-  }, [kind, ledgerAccountItemsFiltered])
+  }, [kind, ledgerAccountItemsFiltered, accountIdFromUrl])
 
   const trialRowsAll = useMemo((): TrialBalanceRow[] => {
     const raw = trial.data ?? []
@@ -924,6 +968,14 @@ export function FinancialReportsPage() {
                 onChange={(e) => setTo(e.target.value)}
               />
             </div>
+            <div className="w-full min-w-0 lg:w-72">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Entry view</label>
+              <FormSelect
+                options={trialBalanceModeOptions}
+                value={trialBalanceModeOptions.find((o) => o.value === reportTrialBalanceMode) ?? null}
+                onChange={(o) => setReportTrialBalanceMode((o?.value as typeof reportTrialBalanceMode) ?? 'adjusted')}
+              />
+            </div>
           </div>
         </div>
 
@@ -1047,6 +1099,14 @@ export function FinancialReportsPage() {
                 onChange={(e) => setTo(e.target.value)}
               />
             </div>
+            <div className="w-full min-w-0 lg:w-72">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Entry view</label>
+              <FormSelect
+                options={trialBalanceModeOptions}
+                value={trialBalanceModeOptions.find((o) => o.value === reportTrialBalanceMode) ?? null}
+                onChange={(o) => setReportTrialBalanceMode((o?.value as typeof reportTrialBalanceMode) ?? 'adjusted')}
+              />
+            </div>
           </div>
         </div>
 
@@ -1162,6 +1222,14 @@ export function FinancialReportsPage() {
                 onChange={(e) => setTo(e.target.value)}
               />
             </div>
+            <div className="w-full min-w-0 lg:w-72">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Entry view</label>
+              <FormSelect
+                options={trialBalanceModeOptions}
+                value={trialBalanceModeOptions.find((o) => o.value === reportTrialBalanceMode) ?? null}
+                onChange={(o) => setReportTrialBalanceMode((o?.value as typeof reportTrialBalanceMode) ?? 'adjusted')}
+              />
+            </div>
           </div>
           <p className="mt-3 text-xs text-slate-500">
             Assign accounts to chart types <strong>Income</strong>, <strong>COGS</strong>, or <strong>Expense</strong> for them to appear here.{' '}
@@ -1256,6 +1324,17 @@ export function FinancialReportsPage() {
                 value={to}
                 onChange={(e) => {
                   setTo(e.target.value)
+                  setTrialPage(1)
+                }}
+              />
+            </div>
+            <div className="w-full min-w-0 lg:w-72">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Entry view</label>
+              <FormSelect
+                options={trialBalanceModeOptions}
+                value={trialBalanceModeOptions.find((o) => o.value === reportTrialBalanceMode) ?? null}
+                onChange={(o) => {
+                  setReportTrialBalanceMode((o?.value as typeof reportTrialBalanceMode) ?? 'adjusted')
                   setTrialPage(1)
                 }}
               />
@@ -1366,6 +1445,14 @@ export function FinancialReportsPage() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 value={bsAsOf}
                 onChange={(e) => setBsAsOf(e.target.value)}
+              />
+            </div>
+            <div className="w-full min-w-0 lg:w-72">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Entry view</label>
+              <FormSelect
+                options={trialBalanceModeOptions}
+                value={trialBalanceModeOptions.find((o) => o.value === reportTrialBalanceMode) ?? null}
+                onChange={(o) => setReportTrialBalanceMode((o?.value as typeof reportTrialBalanceMode) ?? 'adjusted')}
               />
             </div>
           </div>

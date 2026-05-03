@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Eye, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeftRight, Eye, Plus, Trash2 } from 'lucide-react'
 import {
   useCreateJournalEntryMutation,
   useDeleteJournalEntryMutation,
@@ -16,6 +16,7 @@ import { DataTable, type Column } from '../../components/DataTable'
 import { DateField } from '../../components/DateField'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
+import { FundTransferModal, type FundTransferSubmitPayload } from '../../components/FundTransferModal'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
 import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import { useDebouncedValue } from '../../lib/hooks'
@@ -23,6 +24,7 @@ import { formatDecimal } from '../../lib/formatNumber'
 import { isAccountsPayable, isAccountsReceivable } from '../../lib/accountingSubledger'
 import { filterAccountsForViewer } from '../../lib/accountScope'
 import {
+  adminNeedsSettingsStation,
   showBusinessPickerInForms,
   showStationColumnInTables,
   showStationPickerInForms,
@@ -92,7 +94,7 @@ export function ManualJournalEntryPage() {
     { skip: skipSubledgerLists },
   )
   const { data: businesses } = useGetBusinessesQuery({ page: 1, pageSize: 500, q: undefined })
-  const [createJournal] = useCreateJournalEntryMutation()
+  const [createJournal, { isLoading: journalSaving }] = useCreateJournalEntryMutation()
   const [deleteJournal] = useDeleteJournalEntryMutation()
   const { requestDelete, dialog: deleteDialog } = useDeleteConfirm()
 
@@ -106,6 +108,17 @@ export function ManualJournalEntryPage() {
   ])
   const [selectedLineIdx, setSelectedLineIdx] = useState(0)
   const [journalDate, setJournalDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [entryKind, setEntryKind] = useState(0)
+  const [transferOpen, setTransferOpen] = useState(false)
+
+  const entryKindOptions: SelectOption[] = useMemo(
+    () => [
+      { value: '0', label: 'Normal' },
+      { value: '1', label: 'Adjusting' },
+      { value: '2', label: 'Closing' },
+    ],
+    [],
+  )
 
   const businessOptions: SelectOption[] = useMemo(() => {
     const items = businesses?.items ?? []
@@ -220,9 +233,6 @@ export function ManualJournalEntryPage() {
       const acc = l.accountId ? accountById.get(l.accountId) : undefined
       const ar = isAccountsReceivable(acc)
       const ap = isAccountsPayable(acc)
-      const isExpense =
-        String(acc?.chartsOfAccounts?.type ?? '').toLowerCase() === 'expense' ||
-        String(acc?.chartsOfAccounts?.type ?? '').toLowerCase() === 'cogs'
       if (l.customerId != null && l.customerId > 0 && l.supplierId != null && l.supplierId > 0) {
         return 'A line cannot have both a customer and a supplier.'
       }
@@ -240,10 +250,6 @@ export function ManualJournalEntryPage() {
         if (l.customerId != null && l.customerId > 0) {
           return 'Customer is not allowed on Accounts Payable lines.'
         }
-      } else {
-        if (l.customerId != null && l.customerId > 0) return 'Customer is only allowed on receivable accounts.'
-        if (!isExpense && l.supplierId != null && l.supplierId > 0)
-          return 'Supplier is only allowed on payable, expense, or COGS accounts.'
       }
     }
     return null
@@ -268,30 +274,40 @@ export function ManualJournalEntryPage() {
       description: description.trim(),
       businessId: showBizPicker ? (formBusinessId ?? undefined) : undefined,
       stationId: resolvedStationId,
-      lines: lines.map((l) => {
-        const acc = l.accountId ? accountById.get(l.accountId) : undefined
-        const ar = isAccountsReceivable(acc)
-        const ap = isAccountsPayable(acc)
-        const isExpense =
-          String(acc?.chartsOfAccounts?.type ?? '').toLowerCase() === 'expense' ||
-          String(acc?.chartsOfAccounts?.type ?? '').toLowerCase() === 'cogs'
-        return {
-          accountId: l.accountId!,
-          debit: String(Number.parseFloat(l.debit.replace(',', '.')) || 0),
-          credit: String(Number.parseFloat(l.credit.replace(',', '.')) || 0),
-          remark: l.remark.trim() || undefined,
-          ...(ar && l.customerId != null && l.customerId > 0 ? { customerId: l.customerId } : {}),
-          ...((ap || isExpense) && l.supplierId != null && l.supplierId > 0 ? { supplierId: l.supplierId } : {}),
-        }
-      }),
+      ...(entryKind > 0 ? { entryKind } : {}),
+      lines: lines.map((l) => ({
+        accountId: l.accountId!,
+        debit: String(Number.parseFloat(l.debit.replace(',', '.')) || 0),
+        credit: String(Number.parseFloat(l.credit.replace(',', '.')) || 0),
+        remark: l.remark.trim() || undefined,
+        ...(l.customerId != null && l.customerId > 0 ? { customerId: l.customerId } : {}),
+        ...(l.supplierId != null && l.supplierId > 0 ? { supplierId: l.supplierId } : {}),
+      })),
     }
     await createJournal(body).unwrap()
     setOpen(false)
     setDescription('')
     setStationId(null)
     setJournalDate(new Date().toISOString().slice(0, 10))
+    setEntryKind(0)
     setLines([emptyLine(), emptyLine()])
     setSelectedLineIdx(0)
+  }
+
+  async function submitFundTransfer(p: FundTransferSubmitPayload) {
+    const desc =
+      p.note.trim().length > 0 ? `Fund transfer — ${p.note.trim()}` : 'Fund transfer'
+    const body: JournalEntryWriteRequest = {
+      date: `${p.date}T12:00:00.000Z`,
+      description: desc,
+      businessId: showBizPicker ? (formBusinessId ?? undefined) : undefined,
+      stationId: p.stationId,
+      lines: [
+        { accountId: p.fromAccountId, debit: p.amount, credit: '0' },
+        { accountId: p.toAccountId, debit: '0', credit: p.amount },
+      ],
+    }
+    await createJournal(body).unwrap()
   }
 
   return (
@@ -316,6 +332,7 @@ export function ManualJournalEntryPage() {
         onSelectedIdsChange={setSelected}
         onAdd={() => {
           setJournalDate(new Date().toISOString().slice(0, 10))
+          setEntryKind(0)
           setOpen(true)
         }}
         renderExtraRowActions={(row) => (
@@ -353,9 +370,44 @@ export function ManualJournalEntryPage() {
             },
           })
         }
+        extraToolbar={
+          routeCanCreate ? (
+            <button
+              type="button"
+              disabled={adminNeedsSettingsStation(role, effectiveStationId)}
+              title={
+                adminNeedsSettingsStation(role, effectiveStationId)
+                  ? 'Choose a working station under Settings first.'
+                  : undefined
+              }
+              onClick={() => setTransferOpen(true)}
+              className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
+            >
+              <ArrowLeftRight className="h-4 w-4" />
+              Fund transfer
+            </button>
+          ) : undefined
+        }
       />
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Post manual journal" className="max-w-5xl">
+      <FundTransferModal
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        submitting={journalSaving}
+        accountOptions={accountOptions}
+        accountById={accountById}
+        showStationPicker={showStationPicker}
+        stationOptions={stationOptions}
+        effectiveStationId={effectiveStationId}
+        onSubmit={submitFundTransfer}
+      />
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Post manual journal"
+        className="w-[min(100%,calc(100vw-0.5rem))] max-w-5xl"
+      >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {showBizPicker && (
             <div className="md:col-span-2">
@@ -379,18 +431,53 @@ export function ManualJournalEntryPage() {
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
-          {showStationPicker && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Station (optional)</label>
-              <FormSelect
-                options={stationOptions}
-                value={stationOptions.find((x) => x.value === String(stationId ?? '')) ?? null}
-                onChange={(opt) => setStationId(opt ? Number(opt.value) : null)}
-                isClearable
-                placeholder="No station"
-              />
+          <div className="md:col-span-2">
+            <div className={`grid gap-3 ${showStationPicker ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+              <div className="min-w-0">
+                <label className="mb-1 block text-sm font-medium text-slate-700">Entry type</label>
+                <div className="w-full min-w-0">
+                  <FormSelect
+                    options={entryKindOptions}
+                    value={entryKindOptions.find((o) => o.value === String(entryKind)) ?? entryKindOptions[0]}
+                    onChange={(o) => setEntryKind(o ? Number(o.value) : 0)}
+                  />
+                </div>
+              </div>
+              {showStationPicker ? (
+                <div className="min-w-0">
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Station (optional)</label>
+                  <div className="w-full min-w-0">
+                    <FormSelect
+                      options={stationOptions}
+                      value={stationOptions.find((x) => x.value === String(stationId ?? '')) ?? null}
+                      onChange={(opt) => setStationId(opt ? Number(opt.value) : null)}
+                      isClearable
+                      placeholder="No station"
+                    />
+                  </div>
+                </div>
+              ) : null}
             </div>
-          )}
+            {/* <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
+              <p className="mb-1.5 font-semibold text-slate-700">Entry types</p>
+              <ul className="list-disc space-y-1 pl-4 marker:text-slate-400">
+                <li>
+                  <span className="font-medium text-slate-800">Normal</span> — everyday journals (sales, expenses,
+                  transfers). Use this unless you are doing period-end work.
+                </li>
+                <li>
+                  <span className="font-medium text-slate-800">Adjusting</span> — period-end accruals, deferrals, and
+                  corrections before statements. Reports can treat these separately from routine activity.
+                </li>
+                <li>
+                  <span className="font-medium text-slate-800">Closing</span> — closes the income statement into equity
+                  (e.g. retained earnings) for the period and clears the profit-and-loss accounts for the next cycle.
+                  Use only as part of
+                  your formal close process.
+                </li>
+              </ul> 
+            </div>*/}
+          </div>
           <div className="md:col-span-2">
             <div className="mb-1 flex items-center justify-between">
               <label className="block text-sm font-medium text-slate-700">Journal lines</label>
@@ -404,15 +491,15 @@ export function ManualJournalEntryPage() {
               </button>
             </div>
             <div className="rounded-lg border border-slate-200">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+                <table className="w-full min-w-[52rem] table-fixed divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="px-3 py-2 text-left font-semibold text-slate-600">Account</th>
-                      <th className="px-3 py-2 text-left font-semibold text-slate-600">Debit</th>
-                      <th className="px-3 py-2 text-left font-semibold text-slate-600">Credit</th>
-                      <th className="px-3 py-2 text-left font-semibold text-slate-600">Remark</th>
-                      <th className="w-10 px-3 py-2 text-right font-semibold text-slate-600" />
+                      <th className="min-w-[16rem] px-3 py-2 text-left font-semibold text-slate-600">Account</th>
+                      <th className="min-w-[7.5rem] w-[7.5rem] px-3 py-2 text-left font-semibold text-slate-600">Debit</th>
+                      <th className="min-w-[7.5rem] w-[7.5rem] px-3 py-2 text-left font-semibold text-slate-600">Credit</th>
+                      <th className="min-w-[13rem] px-3 py-2 text-left font-semibold text-slate-600">Remark</th>
+                      <th className="w-12 min-w-[3rem] shrink-0 px-2 py-2 text-right font-semibold text-slate-600" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -423,8 +510,8 @@ export function ManualJournalEntryPage() {
                         className={`align-top ${idx === selectedLineIdx ? 'bg-emerald-50/30' : ''}`}
                         onClick={() => setSelectedLineIdx(idx)}
                       >
-                        <td className="px-3 py-2">
-                          <div className="min-w-56">
+                        <td className="px-3 py-2 align-top">
+                          <div className="min-w-[16rem]">
                             <FormSelect
                               options={accountOptions}
                               value={accountOptions.find((x) => x.value === String(line.accountId ?? '')) ?? null}
@@ -446,9 +533,9 @@ export function ManualJournalEntryPage() {
                             />
                           </div>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="min-w-[7.5rem] px-3 py-2 align-top">
                           <input
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+                            className="w-full min-w-[7rem] rounded-lg border border-slate-200 px-2 py-2 tabular-nums"
                             placeholder="0"
                             value={line.debit}
                             onChange={(e) =>
@@ -456,9 +543,9 @@ export function ManualJournalEntryPage() {
                             }
                           />
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="min-w-[7.5rem] px-3 py-2 align-top">
                           <input
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+                            className="w-full min-w-[7rem] rounded-lg border border-slate-200 px-2 py-2 tabular-nums"
                             placeholder="0"
                             value={line.credit}
                             onChange={(e) =>
@@ -466,9 +553,9 @@ export function ManualJournalEntryPage() {
                             }
                           />
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="min-w-[13rem] px-3 py-2 align-top">
                           <input
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+                            className="w-full min-w-[12rem] rounded-lg border border-slate-200 px-2 py-2"
                             placeholder="Remark (optional)"
                             value={line.remark}
                             onChange={(e) =>
@@ -476,7 +563,7 @@ export function ManualJournalEntryPage() {
                             }
                           />
                         </td>
-                        <td className="px-3 py-2 text-right">
+                        <td className="w-12 min-w-[3rem] shrink-0 px-2 py-2 text-right align-top">
                           <button
                             type="button"
                             disabled={lines.length <= 1}
@@ -495,52 +582,43 @@ export function ManualJournalEntryPage() {
               </div>
               {lines[selectedLineIdx] && (() => {
                 const line = lines[selectedLineIdx]
-                const acc = line.accountId ? accountById.get(line.accountId) : undefined
-                const showCustomer = isAccountsReceivable(acc)
-                const showSupplier = isAccountsPayable(acc) || ['expense', 'cogs'].includes(String(acc?.chartsOfAccounts?.type ?? '').toLowerCase())
                 return (
                   <div className="grid gap-3 border-t border-slate-100 p-3 md:grid-cols-2">
                     <div>
                       <label className="mb-1 block text-xs font-medium text-slate-600">Customer (selected line)</label>
-                      {showCustomer ? (
-                        <FormSelect
-                          options={customerOptions}
-                          value={customerOptions.find((x) => x.value === String(line.customerId ?? '')) ?? null}
-                          onChange={(opt) =>
-                            setLines((prev) =>
-                              prev.map((l, i) => (i === selectedLineIdx ? { ...l, customerId: opt ? Number(opt.value) : null } : l)),
-                            )
-                          }
-                          placeholder="Select customer"
-                        />
-                      ) : (
-                        <input
-                          readOnly
-                          value="—"
-                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-500"
-                        />
-                      )}
+                      <FormSelect
+                        options={customerOptions}
+                        value={customerOptions.find((x) => x.value === String(line.customerId ?? '')) ?? null}
+                        onChange={(opt) =>
+                          setLines((prev) =>
+                            prev.map((l, i) =>
+                              i === selectedLineIdx
+                                ? { ...l, customerId: opt ? Number(opt.value) : null, supplierId: null }
+                                : l,
+                            ),
+                          )
+                        }
+                        isClearable
+                        placeholder="None"
+                      />
                     </div>
                     <div>
                       <label className="mb-1 block text-xs font-medium text-slate-600">Supplier (selected line)</label>
-                      {showSupplier ? (
-                        <FormSelect
-                          options={supplierOptions}
-                          value={supplierOptions.find((x) => x.value === String(line.supplierId ?? '')) ?? null}
-                          onChange={(opt) =>
-                            setLines((prev) =>
-                              prev.map((l, i) => (i === selectedLineIdx ? { ...l, supplierId: opt ? Number(opt.value) : null } : l)),
-                            )
-                          }
-                          placeholder="Select supplier"
-                        />
-                      ) : (
-                        <input
-                          readOnly
-                          value="—"
-                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-500"
-                        />
-                      )}
+                      <FormSelect
+                        options={supplierOptions}
+                        value={supplierOptions.find((x) => x.value === String(line.supplierId ?? '')) ?? null}
+                        onChange={(opt) =>
+                          setLines((prev) =>
+                            prev.map((l, i) =>
+                              i === selectedLineIdx
+                                ? { ...l, supplierId: opt ? Number(opt.value) : null, customerId: null }
+                                : l,
+                            ),
+                          )
+                        }
+                        isClearable
+                        placeholder="None"
+                      />
                     </div>
                   </div>
                 )

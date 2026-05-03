@@ -400,6 +400,8 @@ export interface JournalEntryWriteRequest {
   description: string
   businessId?: number
   stationId?: number | null
+  /** 0 Normal, 1 Adjusting, 2 Closing, 3 RecurringAuto (optional). */
+  entryKind?: number
   lines: JournalEntryLineWriteRequest[]
 }
 
@@ -605,6 +607,10 @@ export interface LiterReceivedWriteRequest {
   businessId?: number
   /** Maps to API `recordedAt`. */
   recordedAt?: string
+  /** Out: confirm a pending business pool transfer as received at destination. */
+  confirmBusinessPoolTransferReceived?: boolean
+  /** Out: pending transfer id when confirming receipt. */
+  confirmTransferInventoryId?: number | null
 }
 
 export interface Supplier {
@@ -681,6 +687,26 @@ export interface PurchaseHeaderWriteRequest {
   businessId?: number
 }
 
+export interface SupplierPayment {
+  id: number
+  referenceNo?: string | null
+  supplierId: number
+  amount: number
+  date: string
+  businessId: number
+  userId: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SupplierPaymentWriteRequest {
+  referenceNo?: string | null
+  supplierId: number
+  amount: string
+  date?: string
+  businessId?: number
+}
+
 export interface BulkPermissionItem {
   menuId: number
   subMenuId?: number | null
@@ -699,4 +725,100 @@ export interface AuthResponse {
   expiresAtUtc: string
   businessId?: number | null
   stationId?: number | null
+}
+
+/** Business-level fuel pool (separate from nozzle / dipping inventory). */
+export interface BusinessFuelInventoryBalance {
+  id: number
+  businessId: number
+  fuelTypeId: number
+  fuelName: string
+  liters: number
+}
+
+export interface BusinessFuelInventoryCredit {
+  id: number
+  businessId: number
+  fuelTypeId: number
+  fuelName: string
+  liters: number
+  date: string
+  creatorId: number
+  creatorName?: string | null
+  reference: string
+  note?: string | null
+}
+
+export type TransferInventoryStatus = 'pending' | 'received'
+
+export interface TransferInventory {
+  id: number
+  businessFuelInventoryId: number
+  businessId: number
+  fuelTypeId: number
+  fuelName: string
+  toStationId: number
+  stationName: string
+  liters: number
+  date: string
+  creatorId: number
+  creatorName?: string | null
+  note?: string | null
+  /** Present once API is migrated; treat missing as pending. */
+  status?: TransferInventoryStatus
+}
+
+export interface TransferPendingConfirm {
+  id: number
+  liters: number
+  date: string
+  fuelName: string
+  stationName: string
+}
+
+export interface AppNotificationItem {
+  id: number
+  businessId: number
+  stationId: number
+  stationName: string
+  title: string
+  body: string
+  createdAt: string
+  isRead: boolean
+  transferInventoryId?: number | null
+  confirmedByName?: string | null
+  liters: number
+  fuelName: string
+  transferDate: string
+}
+
+export interface TransferInventoryAudit {
+  id: number
+  transferInventoryId: number
+  action: string
+  changedAt: string
+  changedByUserId: number
+  changedByName?: string | null
+  toStationId: number
+  liters: number
+  date: string
+  reason?: string | null
+  businessId: number
+}
+
+/** Business-wide transfer audit rows (table on Transfer audit trail page). */
+export interface TransferInventoryAuditListRow {
+  id: number
+  transferInventoryId: number
+  action: string
+  changedAt: string
+  changedByUserId: number
+  changedByName?: string | null
+  toStationId: number
+  liters: number
+  date: string
+  reason?: string | null
+  businessId: number
+  fuelName: string
+  stationName: string
 }

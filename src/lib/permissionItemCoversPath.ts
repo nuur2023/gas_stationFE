@@ -45,6 +45,15 @@ export function permissionItemCoversPath(pathname: string, search: string, itemR
   const r = itemRoute.trim()
   if (!r) return false
 
+  /** Tree COA is read-only; action flags follow the Accounts submenu. */
+  if (pathname === '/accounting/chart-of-accounts-tree' && r === '/accounting/accounts') return true
+
+  if (pathname === '/supplier-payments' && r === '/purchases') return true
+
+  if (pathname === '/transfer-audit-trail') {
+    if (r === '/transfer-audit-trail' || r === '/transfers' || r === '/fuel-inventory/transfers') return true
+  }
+
   if (permissionRouteMatches(pathname, search, r)) return true
 
   const legacyFromModern = FINANCIAL_REPORT_PATH_TO_LEGACY[pathname]

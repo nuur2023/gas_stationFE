@@ -24,6 +24,7 @@ import { FinancialReportsPage } from './pages/reports/FinancialReportsPage'
 import { ToastProvider } from './components/ToastProvider'
 import { PurchaseDetailPage } from './pages/operations/PurchaseDetailPage'
 import { PurchasesPage } from './pages/operations/PurchasesPage'
+import { SupplierPaymentsPage } from './pages/operations/SupplierPaymentsPage'
 import { PumpsPage } from './pages/operations/PumpsPage'
 import { NozzlesPage } from './pages/operations/NozzlesPage'
 import { DippingPumpsPage } from './pages/operations/DippingPumpsPage'
@@ -43,9 +44,15 @@ import { FuelPricesPage } from './pages/setup/FuelPricesPage'
 import { SettingsPage } from './pages/setup/SettingsPage'
 import { ChartOfAccountsPage } from './pages/operations/ChartOfAccountsPage'
 import { ChartsOfAccountsPage } from './pages/operations/ChartsOfAccountsPage'
+import { TreeChartsOfAccountsPage } from './pages/operations/TreeChartsOfAccountsPage'
 import { JournalEntryDetailPage } from './pages/operations/JournalEntryDetailPage'
 import { ManualJournalEntryPage } from './pages/operations/ManualJournalEntryPage'
+import { RecurringJournalEntriesPage } from './pages/accounting/RecurringJournalEntriesPage'
+import { AccountingPeriodsPage } from './pages/accounting/AccountingPeriodsPage'
 import { CustomerPaymentsPage } from './pages/operations/CustomerPaymentsPage'
+import { BusinessFuelInventoryPage } from './pages/fuel-inventory/BusinessFuelInventoryPage'
+import { TransferFuelsPage } from './pages/fuel-inventory/TransferFuelsPage'
+import { TransferAuditTrailPage } from './pages/fuel-inventory/TransferAuditTrailPage'
 import { NoPermissionsPage } from './pages/NoPermissionsPage'
 import { LEGACY_FINANCIAL_KIND_TO_PATH } from './lib/financialReportRoutes'
 
@@ -88,9 +95,12 @@ export function App() {
               <Route path="accounting" element={<Navigate to="/accounting/accounts" replace />} />
               <Route path="accounting/accounts" element={<ChartOfAccountsPage />} />
               <Route path="accounting/charts-of-accounts" element={<ChartsOfAccountsPage />} />
+              <Route path="accounting/chart-of-accounts-tree" element={<TreeChartsOfAccountsPage />} />
               <Route path="accounting/chart-of-accounts" element={<Navigate to="/accounting/charts-of-accounts" replace />} />
               <Route path="accounting/manual-journal-entry/:entryId" element={<JournalEntryDetailPage />} />
               <Route path="accounting/manual-journal-entry" element={<ManualJournalEntryPage />} />
+              <Route path="accounting/recurring-journals" element={<RecurringJournalEntriesPage />} />
+              <Route path="accounting/periods" element={<AccountingPeriodsPage />} />
               <Route path="accounting/customer-payments" element={<CustomerPaymentsPage />} />
               <Route path="accounting/financial-reports" element={<Navigate to="/financial-reports/trial-balance" replace />} />
               <Route path="fuel-types" element={<Navigate to="/setup/fuel-types" replace />} />
@@ -102,7 +112,12 @@ export function App() {
               <Route path="dipping" element={<DippingsPage />} />
               <Route path="suppliers" element={<SuppliersPage />} />
               <Route path="purchases" element={<PurchasesPage />} />
+              <Route path="supplier-payments" element={<SupplierPaymentsPage />} />
               <Route path="purchases/:purchaseId" element={<PurchaseDetailPage />} />
+              <Route path="fuel-inventory" element={<BusinessFuelInventoryPage />} />
+              <Route path="transfers" element={<TransferFuelsPage />} />
+              <Route path="transfer-audit-trail" element={<TransferAuditTrailPage />} />
+              <Route path="fuel-inventory/transfers" element={<Navigate to="/transfers" replace />} />
               <Route path="liter-received" element={<LiterReceivedsPage />} />
               <Route path="reports/liter-received" element={<LiterReceivedReportPage />} />
               <Route path="reports/daily-cash-sales" element={<DailyCashSalesReportPage />} />

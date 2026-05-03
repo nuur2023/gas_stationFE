@@ -40,6 +40,8 @@ import type {
   LatestInventoryForPump,
   LiterReceived,
   LiterReceivedWriteRequest,
+  AppNotificationItem,
+  TransferPendingConfirm,
   Menu,
   Purchase,
   PurchaseHeaderWriteRequest,
@@ -47,7 +49,14 @@ import type {
   PurchaseLineWrite,
   PurchaseWithItems,
   PurchaseWriteRequest,
+  SupplierPayment,
+  SupplierPaymentWriteRequest,
   PagedResult,
+  BusinessFuelInventoryBalance,
+  BusinessFuelInventoryCredit,
+  TransferInventory,
+  TransferInventoryAudit,
+  TransferInventoryAuditListRow,
   Permission,
   PermissionMeResponse,
   Pump,
@@ -115,6 +124,8 @@ export type AccountsPagedArg = PagedArg & { businessId?: number }
 
 export type SuppliersPagedArg = PagedArg & { businessId?: number }
 
+export type SupplierPaymentsPagedArg = PagedArg & { businessId?: number }
+
 /** Date-only strings `yyyy-MM-dd` for `CreatedAt` range (UTC day bounds on the API). */
 export type LiterReceivedsPagedArg = PagedArg & { from?: string; to?: string; filterStationId?: number }
 
@@ -179,12 +190,17 @@ export const apiSlice = createApi({
     'LiterReceived',
     'Supplier',
     'Purchase',
+    'SupplierPayment',
     'CustomerFuelGiven',
     'Account',
     'JournalEntry',
     'CustomerPayment',
     'ChartsOfAccounts',
     'FinancialReport',
+    'BusinessFuelInventory',
+    'RecurringJournal',
+    'AccountingPeriod',
+    'Notification',
   ],
   endpoints: (builder) => ({
     login: builder.mutation<AuthResponse, { emailOrPhone: string; password: string }>({
@@ -638,21 +654,113 @@ export const apiSlice = createApi({
       invalidatesTags: ['CustomerPayment', 'CustomerFuelGiven'],
     }),
 
-    getTrialBalanceReport: builder.query<any[], { businessId: number; from?: string; to?: string; stationId?: number }>({
+    getTrialBalanceReport: builder.query<
+      any[],
+      { businessId: number; from?: string; to?: string; stationId?: number; trialBalanceMode?: string }
+    >({
       query: (params) => ({ url: 'FinancialReports/trial-balance', params }),
       providesTags: ['FinancialReport'],
     }),
-    getGeneralLedgerReport: builder.query<any[], { businessId: number; accountId: number; from?: string; to?: string; stationId?: number }>({
+    /** Type-aware balances for chart-of-accounts tree (GET api/FinancialReports/accounts-with-balances). */
+    getAccountsWithBalances: builder.query<
+      { id: number; name: string; code: string; type: string; balance: number }[],
+      { businessId: number; to?: string; stationId?: number; trialBalanceMode?: string }
+    >({
+      query: (params) => ({ url: 'FinancialReports/accounts-with-balances', params }),
+      providesTags: ['FinancialReport'],
+    }),
+    getGeneralLedgerReport: builder.query<
+      any[],
+      {
+        businessId: number
+        accountId: number
+        from?: string
+        to?: string
+        stationId?: number
+        trialBalanceMode?: string
+      }
+    >({
       query: (params) => ({ url: 'FinancialReports/general-ledger', params }),
       providesTags: ['FinancialReport'],
     }),
-    getProfitLossReport: builder.query<ProfitLossReportDto, { businessId: number; from?: string; to?: string; stationId?: number }>({
+    getProfitLossReport: builder.query<
+      ProfitLossReportDto,
+      { businessId: number; from?: string; to?: string; stationId?: number; trialBalanceMode?: string }
+    >({
       query: (params) => ({ url: 'FinancialReports/profit-loss', params }),
       providesTags: ['FinancialReport'],
     }),
-    getBalanceSheetReport: builder.query<BalanceSheetReportDto, { businessId: number; to?: string; stationId?: number }>({
+    getBalanceSheetReport: builder.query<
+      BalanceSheetReportDto,
+      { businessId: number; to?: string; stationId?: number; trialBalanceMode?: string }
+    >({
       query: (params) => ({ url: 'FinancialReports/balance-sheet', params }),
       providesTags: ['FinancialReport'],
+    }),
+
+    getRecurringJournalEntries: builder.query<
+      any[],
+      { businessId: number; filterStationId?: number }
+    >({
+      query: ({ businessId, filterStationId }) => ({
+        url: 'recurring-journal-entries',
+        params: {
+          businessId,
+          ...(filterStationId != null && filterStationId > 0 ? { filterStationId } : {}),
+        },
+      }),
+      providesTags: ['RecurringJournal'],
+    }),
+    createRecurringJournalEntry: builder.mutation<any, Record<string, unknown>>({
+      query: (body) => ({ url: 'recurring-journal-entries', method: 'POST', body }),
+      invalidatesTags: ['RecurringJournal', 'JournalEntry'],
+    }),
+    updateRecurringJournalEntry: builder.mutation<any, { id: number; body: Record<string, unknown> }>({
+      query: ({ id, body }) => ({ url: `recurring-journal-entries/${id}`, method: 'PUT', body }),
+      invalidatesTags: ['RecurringJournal', 'JournalEntry'],
+    }),
+    confirmRecurringJournalPost: builder.mutation<
+      unknown,
+      { id: number; body: { businessId: number; amount: string } }
+    >({
+      query: ({ id, body }) => ({
+        url: `recurring-journal-entries/${id}/confirm-post`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['RecurringJournal', 'JournalEntry'],
+    }),
+    ensureRecurringJournalPendingIfDue: builder.mutation<
+      unknown,
+      { id: number; body: { businessId: number } }
+    >({
+      query: ({ id, body }) => ({
+        url: `recurring-journal-entries/${id}/ensure-pending-if-due`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['RecurringJournal'],
+    }),
+    deleteRecurringJournalEntry: builder.mutation<void, number>({
+      query: (id) => ({ url: `recurring-journal-entries/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['RecurringJournal'],
+    }),
+
+    getAccountingPeriods: builder.query<any[], { businessId: number }>({
+      query: ({ businessId }) => ({ url: 'accounting-periods', params: { businessId } }),
+      providesTags: ['AccountingPeriod'],
+    }),
+    createAccountingPeriod: builder.mutation<any, Record<string, unknown>>({
+      query: (body) => ({ url: 'accounting-periods', method: 'POST', body }),
+      invalidatesTags: ['AccountingPeriod'],
+    }),
+    closeAccountingPeriod: builder.mutation<any, number>({
+      query: (id) => ({ url: `accounting-periods/${id}/close`, method: 'POST' }),
+      invalidatesTags: ['AccountingPeriod', 'JournalEntry', 'FinancialReport'],
+    }),
+    reopenAccountingPeriod: builder.mutation<any, number>({
+      query: (id) => ({ url: `accounting-periods/${id}/reopen`, method: 'POST' }),
+      invalidatesTags: ['AccountingPeriod', 'JournalEntry', 'FinancialReport'],
     }),
     getCustomerBalancesReport: builder.query<
       any[],
@@ -835,6 +943,14 @@ export const apiSlice = createApi({
       query: (body) => ({ url: 'DippingPumps', method: 'POST', body }),
       invalidatesTags: ['Pump', 'Dipping', 'Inventory'],
     }),
+    updateDippingPump: builder.mutation<DippingPump, { id: number; body: DippingPumpWriteRequest }>({
+      query: ({ id, body }) => ({ url: `DippingPumps/${id}`, method: 'PUT', body }),
+      invalidatesTags: ['Pump', 'Dipping', 'Inventory'],
+    }),
+    deleteDippingPump: builder.mutation<void, number>({
+      query: (id) => ({ url: `DippingPumps/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Pump', 'Dipping', 'Inventory'],
+    }),
 
     getStations: builder.query<PagedResult<Station>, StationsPagedArg>({
       query: ({ page, pageSize, q, businessId }) => ({
@@ -898,15 +1014,193 @@ export const apiSlice = createApi({
     }),
     createLiterReceived: builder.mutation<LiterReceived, LiterReceivedWriteRequest>({
       query: (body) => ({ url: 'LiterReceiveds', method: 'POST', body }),
-      invalidatesTags: ['LiterReceived'],
+      invalidatesTags: ['LiterReceived', 'BusinessFuelInventory', 'Notification'],
     }),
     updateLiterReceived: builder.mutation<LiterReceived, { id: number; body: LiterReceivedWriteRequest }>({
       query: ({ id, body }) => ({ url: `LiterReceiveds/${id}`, method: 'PUT', body }),
-      invalidatesTags: ['LiterReceived'],
+      invalidatesTags: ['LiterReceived', 'BusinessFuelInventory', 'Notification'],
     }),
     deleteLiterReceived: builder.mutation<void, number>({
       query: (id) => ({ url: `LiterReceiveds/${id}`, method: 'DELETE' }),
       invalidatesTags: ['LiterReceived'],
+    }),
+
+    getBusinessFuelInventoryBalances: builder.query<BusinessFuelInventoryBalance[], { businessId?: number }>({
+      query: ({ businessId }) => ({
+        url: 'business-fuel-inventory/balances',
+        params: businessId != null && businessId > 0 ? { businessId } : {},
+      }),
+      providesTags: ['BusinessFuelInventory'],
+    }),
+    getBusinessFuelInventoryCredits: builder.query<
+      PagedResult<BusinessFuelInventoryCredit>,
+      { businessId?: number; page?: number; pageSize?: number }
+    >({
+      query: ({ businessId, page = 1, pageSize = 50 }) => ({
+        url: 'business-fuel-inventory/credits',
+        params: {
+          page,
+          pageSize,
+          ...(businessId != null && businessId > 0 ? { businessId } : {}),
+        },
+      }),
+      providesTags: ['BusinessFuelInventory'],
+    }),
+    getBusinessFuelInventoryTransfers: builder.query<
+      PagedResult<TransferInventory>,
+      { businessId?: number; page?: number; pageSize?: number }
+    >({
+      query: ({ businessId, page = 1, pageSize = 50 }) => ({
+        url: 'business-fuel-inventory/transfers',
+        params: {
+          page,
+          pageSize,
+          ...(businessId != null && businessId > 0 ? { businessId } : {}),
+        },
+      }),
+      providesTags: ['BusinessFuelInventory'],
+    }),
+    getTransferInventoryAudit: builder.query<TransferInventoryAudit[], { id: number; businessId?: number }>({
+      query: ({ id, businessId }) => ({
+        url: `business-fuel-inventory/transfers/${id}/audit`,
+        params: businessId != null && businessId > 0 ? { businessId } : {},
+      }),
+      providesTags: ['BusinessFuelInventory'],
+    }),
+    getTransferInventoryAuditTrailPaged: builder.query<
+      PagedResult<TransferInventoryAuditListRow>,
+      { businessId?: number; page?: number; pageSize?: number; q?: string }
+    >({
+      query: ({ businessId, page = 1, pageSize = 50, q }) => ({
+        url: 'business-fuel-inventory/transfers/audit-trail',
+        params: {
+          page,
+          pageSize,
+          ...(businessId != null && businessId > 0 ? { businessId } : {}),
+          ...(q != null && q.trim() !== '' ? { q: q.trim() } : {}),
+        },
+      }),
+      providesTags: ['BusinessFuelInventory'],
+    }),
+    createBusinessFuelInventoryCredit: builder.mutation<
+      BusinessFuelInventoryCredit,
+      { businessId: number; fuelTypeId: number; liters: string; date?: string; reference: string; note?: string }
+    >({
+      query: (body) => ({
+        url: 'business-fuel-inventory/credits',
+        method: 'POST',
+        body: {
+          businessId: body.businessId,
+          fuelTypeId: body.fuelTypeId,
+          liters: body.liters,
+          date: body.date,
+          reference: body.reference,
+          note: body.note,
+        },
+      }),
+      invalidatesTags: ['BusinessFuelInventory'],
+    }),
+    deleteBusinessFuelInventoryCredit: builder.mutation<void, { id: number; businessId: number }>({
+      query: ({ id, businessId }) => ({
+        url: `business-fuel-inventory/credits/${id}`,
+        method: 'DELETE',
+        body: { businessId },
+      }),
+      invalidatesTags: ['BusinessFuelInventory'],
+    }),
+    createBusinessFuelInventoryTransfer: builder.mutation<
+      TransferInventory,
+      { businessId: number; fuelTypeId: number; toStationId: number; liters: string; date?: string; note?: string }
+    >({
+      query: (body) => ({
+        url: 'business-fuel-inventory/transfers',
+        method: 'POST',
+        body: {
+          businessId: body.businessId,
+          fuelTypeId: body.fuelTypeId,
+          toStationId: body.toStationId,
+          liters: body.liters,
+          date: body.date,
+          note: body.note,
+        },
+      }),
+      invalidatesTags: ['BusinessFuelInventory'],
+    }),
+    updateBusinessFuelInventoryTransfer: builder.mutation<
+      TransferInventory,
+      {
+        id: number
+        businessId: number
+        toStationId: number
+        liters: string
+        date?: string
+        note?: string
+        reason: string
+      }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `business-fuel-inventory/transfers/${id}`,
+        method: 'PUT',
+        body,
+      }),
+      invalidatesTags: ['BusinessFuelInventory'],
+    }),
+    deleteBusinessFuelInventoryTransfer: builder.mutation<void, { id: number; businessId: number; reason: string }>({
+      query: ({ id, businessId, reason }) => ({
+        url: `business-fuel-inventory/transfers/${id}`,
+        method: 'DELETE',
+        body: { businessId, reason },
+      }),
+      invalidatesTags: ['BusinessFuelInventory'],
+    }),
+
+    getPendingPoolTransfersForConfirm: builder.query<
+      TransferPendingConfirm[],
+      { businessId: number; toStationId: number; fuelTypeId: number }
+    >({
+      query: ({ businessId, toStationId, fuelTypeId }) => ({
+        url: 'business-fuel-inventory/transfers/pending-confirm',
+        params: { businessId, toStationId, fuelTypeId },
+      }),
+      providesTags: ['BusinessFuelInventory'],
+    }),
+
+    getNotificationsPaged: builder.query<
+      PagedResult<AppNotificationItem>,
+      { businessId?: number; page?: number; pageSize?: number }
+    >({
+      query: ({ businessId, page = 1, pageSize = 30 }) => ({
+        url: 'Notifications',
+        params: {
+          page,
+          pageSize,
+          ...(businessId != null && businessId > 0 ? { businessId } : {}),
+        },
+      }),
+      providesTags: ['Notification'],
+    }),
+    getNotificationsUnreadCount: builder.query<{ count: number }, { businessId?: number }>({
+      query: ({ businessId }) => ({
+        url: 'Notifications/unread-count',
+        params: businessId != null && businessId > 0 ? { businessId } : {},
+      }),
+      providesTags: ['Notification'],
+    }),
+    markNotificationRead: builder.mutation<void, { id: number; businessId?: number }>({
+      query: ({ id, businessId }) => ({
+        url: `Notifications/${id}/read`,
+        method: 'POST',
+        params: businessId != null && businessId > 0 ? { businessId } : {},
+      }),
+      invalidatesTags: ['Notification'],
+    }),
+    markAllNotificationsRead: builder.mutation<{ marked: number }, { businessId?: number }>({
+      query: ({ businessId }) => ({
+        url: 'Notifications/read-all',
+        method: 'POST',
+        params: businessId != null && businessId > 0 ? { businessId } : {},
+      }),
+      invalidatesTags: ['Notification'],
     }),
 
     getSuppliers: builder.query<PagedResult<Supplier>, SuppliersPagedArg>({
@@ -936,6 +1230,17 @@ export const apiSlice = createApi({
       }),
       providesTags: ['Purchase'],
     }),
+    getSupplierPayments: builder.query<PagedResult<SupplierPayment>, SupplierPaymentsPagedArg>({
+      query: ({ page, pageSize, q, businessId }) => ({
+        url: 'SupplierPayments',
+        params: { page, pageSize, q, ...(businessId != null && businessId > 0 ? { businessId } : {}) },
+      }),
+      providesTags: ['SupplierPayment'],
+    }),
+    createSupplierPayment: builder.mutation<SupplierPayment, SupplierPaymentWriteRequest>({
+      query: (body) => ({ url: 'SupplierPayments', method: 'POST', body }),
+      invalidatesTags: ['SupplierPayment'],
+    }),
     getPurchase: builder.query<PurchaseWithItems, number>({
       query: (id) => ({ url: `Purchases/${id}` }),
       transformResponse: normalizePurchaseWithItems,
@@ -944,12 +1249,12 @@ export const apiSlice = createApi({
     createPurchase: builder.mutation<PurchaseWithItems, PurchaseWriteRequest>({
       query: (body) => ({ url: 'Purchases', method: 'POST', body }),
       transformResponse: normalizePurchaseWithItems,
-      invalidatesTags: ['Purchase'],
+      invalidatesTags: ['Purchase', 'SupplierPayment'],
     }),
     updatePurchase: builder.mutation<PurchaseWithItems, { id: number; body: PurchaseHeaderWriteRequest }>({
       query: ({ id, body }) => ({ url: `Purchases/${id}`, method: 'PUT', body }),
       transformResponse: normalizePurchaseWithItems,
-      invalidatesTags: (_r, _e, arg) => ['Purchase', { type: 'Purchase', id: arg.id }],
+      invalidatesTags: (_r, _e, arg) => ['Purchase', 'SupplierPayment', { type: 'Purchase', id: arg.id }],
     }),
     addPurchaseItem: builder.mutation<PurchaseWithItems, { purchaseId: number; body: PurchaseLineWrite }>({
       query: ({ purchaseId, body }) => ({
@@ -1065,9 +1370,20 @@ export const {
   useCreateCustomerPaymentMutation,
   useDeleteCustomerPaymentMutation,
   useGetTrialBalanceReportQuery,
+  useGetAccountsWithBalancesQuery,
   useGetGeneralLedgerReportQuery,
   useGetProfitLossReportQuery,
   useGetBalanceSheetReportQuery,
+  useGetRecurringJournalEntriesQuery,
+  useCreateRecurringJournalEntryMutation,
+  useUpdateRecurringJournalEntryMutation,
+  useConfirmRecurringJournalPostMutation,
+  useEnsureRecurringJournalPendingIfDueMutation,
+  useDeleteRecurringJournalEntryMutation,
+  useGetAccountingPeriodsQuery,
+  useCreateAccountingPeriodMutation,
+  useCloseAccountingPeriodMutation,
+  useReopenAccountingPeriodMutation,
   useGetCustomerBalancesReportQuery,
   useGetSupplierBalancesReportQuery,
   useGetCashOutDailyReportQuery,
@@ -1096,6 +1412,8 @@ export const {
   useDeletePumpMutation,
   useGetDippingPumpsByBusinessQuery,
   useCreateDippingPumpMutation,
+  useUpdateDippingPumpMutation,
+  useDeleteDippingPumpMutation,
   useGetStationsQuery,
   useCreateStationMutation,
   useUpdateStationMutation,
@@ -1109,11 +1427,28 @@ export const {
   useCreateLiterReceivedMutation,
   useUpdateLiterReceivedMutation,
   useDeleteLiterReceivedMutation,
+  useGetBusinessFuelInventoryBalancesQuery,
+  useGetBusinessFuelInventoryCreditsQuery,
+  useGetBusinessFuelInventoryTransfersQuery,
+  useGetTransferInventoryAuditQuery,
+  useGetTransferInventoryAuditTrailPagedQuery,
+  useCreateBusinessFuelInventoryCreditMutation,
+  useDeleteBusinessFuelInventoryCreditMutation,
+  useCreateBusinessFuelInventoryTransferMutation,
+  useUpdateBusinessFuelInventoryTransferMutation,
+  useDeleteBusinessFuelInventoryTransferMutation,
+  useGetPendingPoolTransfersForConfirmQuery,
+  useGetNotificationsPagedQuery,
+  useGetNotificationsUnreadCountQuery,
+  useMarkNotificationReadMutation,
+  useMarkAllNotificationsReadMutation,
   useGetSuppliersQuery,
   useCreateSupplierMutation,
   useUpdateSupplierMutation,
   useDeleteSupplierMutation,
   useGetPurchasesQuery,
+  useGetSupplierPaymentsQuery,
+  useCreateSupplierPaymentMutation,
   useGetPurchaseQuery,
   useLazyGetPurchaseQuery,
   useCreatePurchaseMutation,

@@ -61,6 +61,8 @@ interface DataTableProps<T extends { id: number }> {
   extraToolbar?: React.ReactNode
   /** Rendered after the table, before the pagination bar (e.g. totals). */
   belowTable?: React.ReactNode
+  /** Shown in the empty state row instead of "No rows found." */
+  emptyMessage?: string
   rowClassName?: (row: T) => string | undefined
   /** Overrides Create/Update/Delete flags from the current route (for nested tables, tests, etc.). */
   tableActionPermissions?: { canCreate: boolean; canUpdate: boolean; canDelete: boolean }
@@ -93,6 +95,7 @@ export function DataTable<T extends { id: number }>({
   renderExtraRowActions,
   extraToolbar,
   belowTable,
+  emptyMessage,
   rowClassName,
   tableActionPermissions,
 }: DataTableProps<T>) {
@@ -235,7 +238,7 @@ export function DataTable<T extends { id: number }>({
                   colSpan={columns.length + extraCols}
                   className="px-3 py-8 text-center text-slate-500"
                 >
-                  No rows found.
+                  {emptyMessage ?? 'No rows found.'}
                 </td>
               </tr>
             )}

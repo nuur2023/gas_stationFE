@@ -47,6 +47,8 @@ export type FlyoutItem = {
   to: string
   label: string
   icon: React.ComponentType<{ className?: string }>
+  /** Small numeric badge (e.g. pending actions count). */
+  badge?: number
 }
 
 interface CollapsedFlyoutMenuProps {
@@ -118,7 +120,7 @@ export function CollapsedFlyoutMenu({
         {title}
       </p>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
-        {items.map(({ to, label, icon: Icon }) => (
+        {items.map(({ to, label, icon: Icon, badge }) => (
           <NavLink
             key={to}
             to={to}
@@ -135,7 +137,12 @@ export function CollapsedFlyoutMenu({
             }
           >
             <Icon className="h-4 w-4 shrink-0" />
-            {label}
+            <span className="flex-1">{label}</span>
+            {badge != null && badge > 0 ? (
+              <span className="min-w-[1.25rem] rounded-full bg-amber-500 px-1.5 py-0.5 text-center text-[10px] font-semibold text-slate-950">
+                {badge > 99 ? '99+' : badge}
+              </span>
+            ) : null}
           </NavLink>
         ))}
       </div>
