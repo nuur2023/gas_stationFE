@@ -92,11 +92,12 @@ const ACCOUNTING_CHILDREN: FlyoutItem[] = [
 const FINANCIAL_REPORTS_CHILDREN: FlyoutItem[] = [
   { to: '/financial-reports/trial-balance', label: 'Trial balance', icon: FileText },
   { to: '/financial-reports/general-ledger', label: 'General ledger', icon: FileText },
-  { to: '/financial-reports/profit-and-loss', label: 'Profit and loss', icon: FileText },
+  { to: '/financial-reports/profit-and-loss', label: 'Income Statement', icon: FileText },
   { to: '/financial-reports/balance-sheet', label: 'Balance sheet', icon: FileText },
+  { to: '/financial-reports/capital-statement', label: 'Capital Statement', icon: FileText },
   { to: '/financial-reports/customer-balances', label: 'Customer balances', icon: FileText },
   { to: '/financial-reports/supplier-balances', label: 'Supplier balances', icon: FileText },
-  { to: '/financial-reports/daily-cash-flow', label: 'Daily cash flow', icon: FileText },
+  { to: '/financial-reports/daily-cash-flow', label: 'Cash flow statement', icon: FileText },
 ]
 
 const REPORTS_CHILDREN: FlyoutItem[] = [

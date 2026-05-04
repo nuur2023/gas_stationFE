@@ -18,7 +18,7 @@ export function filterAccountsForViewer(
 }
 
 /**
- * GL / daily cash flow pickers: one business only (SuperAdmin uses the selected business).
+ * GL / cash flow statement pickers: one business only (SuperAdmin uses the selected business).
  * Excludes global chart rows (businessId null) and other businesses.
  */
 export function filterAccountsForFinancialReportsPicker(
@@ -44,4 +44,32 @@ export function filterBusinessLeafAccounts(items: Account[]): Account[] {
       a.parentAccountId != null &&
       a.parentAccountId > 0,
   )
+}
+
+/**
+ * Manual journal line picker: business-scoped posting accounts (have a parent) plus
+ * Admin/Accountant "temporary" top-level accounts (same business, null parent).
+ * When `resolvedBusinessId` is set, only accounts for that business are included (including temps).
+ */
+export function filterJournalPostingAccountPicker(
+  items: Account[] | undefined,
+  resolvedBusinessId: number | null | undefined,
+): Account[] {
+  const list = items ?? []
+  const bid = resolvedBusinessId != null && resolvedBusinessId > 0 ? resolvedBusinessId : null
+  return list.filter((a) => {
+    const isPostingLeaf = a.parentAccountId != null && a.parentAccountId > 0
+    const isTemporaryBusinessAccount =
+      a.businessId != null && a.businessId > 0 && a.parentAccountId == null
+
+    if (isPostingLeaf) {
+      if (a.businessId == null) return false
+      if (bid != null && a.businessId !== bid) return false
+      return true
+    }
+    if (isTemporaryBusinessAccount) {
+      return bid != null && a.businessId === bid
+    }
+    return false
+  })
 }

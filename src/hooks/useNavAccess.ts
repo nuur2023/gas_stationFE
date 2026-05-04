@@ -5,6 +5,8 @@ import {
   FINANCIAL_REPORT_CORE_PATHS,
   FINANCIAL_REPORT_LEGACY_CORE_ROUTES,
   FINANCIAL_REPORT_PATH_TO_LEGACY,
+  TRIAL_BALANCE_LEGACY_VARIANT_PATHS,
+  trialBalanceFinancialPathAllowed,
 } from '../lib/financialReportRoutes'
 import { permissionItemCoversPath } from '../lib/permissionItemCoversPath'
 import { permissionRouteMatches } from '../lib/permissionRoutes'
@@ -33,7 +35,7 @@ function setHasAnyRoute(set: Set<string>, routes: readonly string[]): boolean {
   return routes.some((route) => set.has(route))
 }
 
-/** Daily cash flow: explicit permission, or any other financial report (new or legacy). */
+/** Cash flow statement: explicit permission, or any other financial report (new or legacy). */
 function hasFinancialPermissionForDailyCashFlow(set: Set<string>): boolean {
   if (set.has('/financial-reports/daily-cash-flow')) return true
   if (set.has('/reports/financial?kind=daily-cash-flow')) return true
@@ -48,6 +50,7 @@ function financialPathAllowedByModernOrLegacy(
   search: string,
   set: Set<string>,
 ): boolean {
+  if (trialBalanceFinancialPathAllowed(pathname, set)) return true
   for (const r of set) {
     if (permissionRouteMatches(pathname, search, r)) return true
   }
@@ -57,6 +60,7 @@ function financialPathAllowedByModernOrLegacy(
 }
 
 function financialLinkAllowedByModernOrLegacy(pathname: string, search: string, set: Set<string>): boolean {
+  if (trialBalanceFinancialPathAllowed(pathname, set)) return true
   for (const r of set) {
     if (exactRouteMatches(pathname, search, r)) return true
   }
@@ -78,15 +82,22 @@ function legacyFinancialQueryAllowed(pathname: string, search: string, set: Set<
   }
   const kind = new URLSearchParams(search).get('kind')
   if (!kind) return false
+  if (kind === 'trial') {
+    return (
+      set.has('/financial-reports/trial-balance') ||
+      set.has('/reports/financial?kind=trial') ||
+      TRIAL_BALANCE_LEGACY_VARIANT_PATHS.some((p) => set.has(p))
+    )
+  }
   const modernPath =
-    kind === 'trial'
-      ? '/financial-reports/trial-balance'
-      : kind === 'ledger'
-        ? '/financial-reports/general-ledger'
-        : kind === 'pl'
-          ? '/financial-reports/profit-and-loss'
-          : kind === 'bs'
-            ? '/financial-reports/balance-sheet'
+    kind === 'ledger'
+      ? '/financial-reports/general-ledger'
+      : kind === 'pl'
+        ? '/financial-reports/profit-and-loss'
+        : kind === 'bs'
+          ? '/financial-reports/balance-sheet'
+          : kind === 'capital'
+            ? '/financial-reports/capital-statement'
             : kind === 'customer'
               ? '/financial-reports/customer-balances'
               : kind === 'supplier'

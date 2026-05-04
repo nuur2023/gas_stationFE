@@ -3,6 +3,7 @@ import {
   FINANCIAL_REPORT_LEGACY_CORE_ROUTES,
   FINANCIAL_REPORT_PATH_TO_LEGACY,
   LEGACY_FINANCIAL_KIND_TO_PATH,
+  isTrialBalanceFinancialPath,
 } from './financialReportRoutes'
 import { permissionRouteMatches } from './permissionRoutes'
 
@@ -27,7 +28,7 @@ function exactRouteMatches(pathname: string, search: string, allowedRoute: strin
   return true
 }
 
-/** True if this permission row should contribute CRUD flags on the daily cash flow report URL. */
+/** True if this permission row should contribute CRUD flags on the cash flow statement report URL. */
 function itemCoversDailyCashFlowPath(itemRoute: string): boolean {
   const r = itemRoute.trim()
   if (!r) return false
@@ -54,6 +55,11 @@ export function permissionItemCoversPath(pathname: string, search: string, itemR
     if (r === '/transfer-audit-trail' || r === '/transfers' || r === '/fuel-inventory/transfers') return true
   }
 
+  if (isTrialBalanceFinancialPath(pathname)) {
+    if (r === '/financial-reports/trial-balance' || r === '/reports/financial?kind=trial') return true
+    if (isTrialBalanceFinancialPath(r) && r === pathname) return true
+  }
+
   if (permissionRouteMatches(pathname, search, r)) return true
 
   const legacyFromModern = FINANCIAL_REPORT_PATH_TO_LEGACY[pathname]
@@ -66,6 +72,10 @@ export function permissionItemCoversPath(pathname: string, search: string, itemR
     if (permissionRouteMatches(pathname, search, r)) return true
     const kind = new URLSearchParams(search).get('kind')
     const modernPath = kind ? LEGACY_FINANCIAL_KIND_TO_PATH[kind] : undefined
+    if (kind === 'trial' && (r === '/financial-reports/trial-balance' || r === '/reports/financial?kind=trial'))
+      return true
+    if (kind === 'capital' && (r === '/financial-reports/capital-statement' || r === '/reports/financial?kind=capital'))
+      return true
     if (modernPath && permissionRouteMatches(modernPath, '', r)) return true
     if (kind === 'daily-cash-flow') return itemCoversDailyCashFlowPath(r)
   }

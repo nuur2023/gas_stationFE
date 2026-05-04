@@ -14,10 +14,13 @@ export function ProfitLossReportView({
   data,
   isLoading,
   periodLabel,
+  documentHeading = 'Income Statement',
 }: {
   data: ProfitLossReportDto | undefined
   isLoading: boolean
   periodLabel: string
+  /** Shown as the report title (e.g. includes Unadjusted / Adjusted / Post-closing). */
+  documentHeading?: string
 }) {
   const [open, setOpen] = useState<Record<SectionKey, boolean>>({
     income: true,
@@ -47,7 +50,7 @@ export function ProfitLossReportView({
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-white px-6 py-5 text-center">
-        <h2 className="text-lg font-bold tracking-tight text-slate-900">Profit &amp; Loss</h2>
+        <h2 className="text-lg font-bold tracking-tight text-slate-900">{documentHeading}</h2>
         <p className="mt-1 text-sm text-slate-500">{periodLabel}</p>
       </div>
 

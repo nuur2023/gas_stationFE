@@ -113,13 +113,7 @@ export function TreeChartsOfAccountsPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Chart of accounts (tree)</h1>
-          <p className="text-sm text-slate-600">
-            Balances are the sum of all posted journal lines for each account (debits and credits; adjusted mode excludes
-            closing entries only). Normal balance by account type (e.g. equity credits show positive). Parent rows add
-            child totals. When a workspace station is set in Settings, only postings for that station are included.
-            Balances refresh when you post or change journals. Click an account name or balance to open the general ledger
-            for that account.
-          </p>
+          
         </div>
         {showBizPicker ? (
           <div className="w-full sm:w-72">

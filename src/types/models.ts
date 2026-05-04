@@ -386,6 +386,23 @@ export interface BalanceSheetReportDto {
   equityAccounts: BalanceSheetAccountRow[]
 }
 
+export interface CapitalStatementEquityRow {
+  accountId: number
+  code: string
+  name: string
+  beginning: number
+  change: number
+  ending: number
+}
+
+export interface CapitalStatementReportDto {
+  equityRows: CapitalStatementEquityRow[]
+  totalBeginning: number
+  totalChange: number
+  totalEnding: number
+  netIncome: number
+}
+
 export interface JournalEntryLineWriteRequest {
   accountId: number
   debit: string
@@ -403,6 +420,11 @@ export interface JournalEntryWriteRequest {
   /** 0 Normal, 1 Adjusting, 2 Closing, 3 RecurringAuto (optional). */
   entryKind?: number
   lines: JournalEntryLineWriteRequest[]
+}
+
+/** PATCH api/JournalEntries/{id}/description — lines and amounts unchanged. */
+export interface JournalEntryDescriptionPatchRequest {
+  description: string
 }
 
 export interface CustomerPayment {

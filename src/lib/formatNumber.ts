@@ -10,6 +10,21 @@ export function formatDecimal(value: number, fractionDigits = 2): string {
   }).format(value)
 }
 
+/**
+ * Same grouping as {@link formatDecimal} with an explicit `+` / `−` prefix (zero has no sign).
+ * Use for signed equity-style columns in reports and PDFs.
+ */
+export function formatDecimalSigned(value: number, fractionDigits = 2): string {
+  if (!Number.isFinite(value)) return '—'
+  const nf = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  })
+  if (value > 0) return `+${nf.format(value)}`
+  if (value < 0) return `-${nf.format(Math.abs(value))}`
+  return nf.format(0)
+}
+
 /** Strip grouping and parse; used before save or math. */
 export function parseNumericInput(raw: string): number {
   const s = raw.replace(/,/g, '').replace(/\s/g, '').trim()

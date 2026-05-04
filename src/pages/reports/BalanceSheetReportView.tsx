@@ -14,10 +14,12 @@ export function BalanceSheetReportView({
   data,
   isLoading,
   periodLabel,
+  documentHeading = 'Balance sheet',
 }: {
   data: BalanceSheetReportDto | undefined
   isLoading: boolean
   periodLabel: string
+  documentHeading?: string
 }) {
   const [open, setOpen] = useState<Record<SectionKey, boolean>>({
     assets: true,
@@ -48,7 +50,7 @@ export function BalanceSheetReportView({
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-white px-6 py-5 text-center">
-        <h2 className="text-lg font-bold tracking-tight text-slate-900">Balance sheet</h2>
+        <h2 className="text-lg font-bold tracking-tight text-slate-900">{documentHeading}</h2>
         <p className="mt-1 text-sm text-slate-500">{periodLabel}</p>
       </div>
 

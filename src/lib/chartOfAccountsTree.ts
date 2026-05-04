@@ -1,5 +1,12 @@
 import type { Account, ChartsOfAccounts } from '../types/models'
 
+/** Admin/Accountant "temporary" top-level: scoped to a business but not linked under a parent in the chart. */
+export function isTemporaryBusinessAccount(account: Account): boolean {
+  const bid = account.businessId
+  const pid = account.parentAccountId
+  return bid != null && bid > 0 && (pid == null || pid === 0)
+}
+
 export type TreeAccountNode = {
   account: Account
   children: TreeAccountNode[]

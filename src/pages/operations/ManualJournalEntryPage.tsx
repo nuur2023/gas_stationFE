@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeftRight, Eye, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeftRight, Eye, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
   useCreateJournalEntryMutation,
   useDeleteJournalEntryMutation,
@@ -10,19 +10,21 @@ import {
   useGetJournalEntriesQuery,
   useGetStationsQuery,
   useGetSuppliersQuery,
+  usePatchJournalEntryDescriptionMutation,
 } from '../../app/api/apiSlice'
 import { useAppSelector } from '../../app/hooks'
 import { DataTable, type Column } from '../../components/DataTable'
 import { DateField } from '../../components/DateField'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
+import { useToast } from '../../components/ToastProvider'
 import { FundTransferModal, type FundTransferSubmitPayload } from '../../components/FundTransferModal'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
 import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import { useDebouncedValue } from '../../lib/hooks'
 import { formatDecimal } from '../../lib/formatNumber'
 import { isAccountsPayable, isAccountsReceivable } from '../../lib/accountingSubledger'
-import { filterAccountsForViewer } from '../../lib/accountScope'
+import { filterAccountsForViewer, filterJournalPostingAccountPicker } from '../../lib/accountScope'
 import {
   adminNeedsSettingsStation,
   showBusinessPickerInForms,
@@ -33,7 +35,8 @@ import {
 import type { JournalEntry, JournalEntryWriteRequest } from '../../types/models'
 
 export function ManualJournalEntryPage() {
-  const { canView: routeCanView, canCreate: routeCanCreate } = usePagePermissionActions()
+  const { canView: routeCanView, canCreate: routeCanCreate, canUpdate: routeCanUpdate } = usePagePermissionActions()
+  const { showSuccess, showError } = useToast()
   type DraftLine = {
     accountId: number | null
     debit: string
@@ -96,6 +99,7 @@ export function ManualJournalEntryPage() {
   const { data: businesses } = useGetBusinessesQuery({ page: 1, pageSize: 500, q: undefined })
   const [createJournal, { isLoading: journalSaving }] = useCreateJournalEntryMutation()
   const [deleteJournal] = useDeleteJournalEntryMutation()
+  const [patchJournalDescription, { isLoading: descSaving }] = usePatchJournalEntryDescriptionMutation()
   const { requestDelete, dialog: deleteDialog } = useDeleteConfirm()
 
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -110,6 +114,9 @@ export function ManualJournalEntryPage() {
   const [journalDate, setJournalDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [entryKind, setEntryKind] = useState(0)
   const [transferOpen, setTransferOpen] = useState(false)
+  const [descEditOpen, setDescEditOpen] = useState(false)
+  const [descEditEntry, setDescEditEntry] = useState<JournalEntry | null>(null)
+  const [descEditText, setDescEditText] = useState('')
 
   const entryKindOptions: SelectOption[] = useMemo(
     () => [
@@ -143,8 +150,8 @@ export function ManualJournalEntryPage() {
     [accounts?.items, role, authBusinessId],
   )
   const journalSelectableAccounts = useMemo(
-    () => viewerAccounts.filter((a) => a.businessId != null && a.parentAccountId != null),
-    [viewerAccounts],
+    () => filterJournalPostingAccountPicker(viewerAccounts, resolvedBusinessId),
+    [viewerAccounts, resolvedBusinessId],
   )
   const accountById = useMemo(() => {
     const m = new Map<number, (typeof journalSelectableAccounts)[number]>()
@@ -294,6 +301,31 @@ export function ManualJournalEntryPage() {
     setSelectedLineIdx(0)
   }
 
+  function openDescriptionEdit(row: JournalEntry) {
+    setDescEditEntry(row)
+    setDescEditText(row.description ?? '')
+    setDescEditOpen(true)
+  }
+
+  async function saveDescriptionEdit() {
+    if (descEditEntry == null) return
+    try {
+      await patchJournalDescription({
+        id: descEditEntry.id,
+        body: { description: descEditText },
+      }).unwrap()
+      showSuccess('Description updated.')
+      setDescEditOpen(false)
+      setDescEditEntry(null)
+    } catch (e) {
+      const msg =
+        typeof e === 'object' && e != null && 'data' in e && typeof (e as { data?: unknown }).data === 'string'
+          ? (e as { data: string }).data
+          : 'Could not update description.'
+      showError(msg)
+    }
+  }
+
   async function submitFundTransfer(p: FundTransferSubmitPayload) {
     const desc =
       p.note.trim().length > 0 ? `Fund transfer — ${p.note.trim()}` : 'Fund transfer'
@@ -336,15 +368,27 @@ export function ManualJournalEntryPage() {
           setOpen(true)
         }}
         renderExtraRowActions={(row) => (
-          <button
-            type="button"
-            title={!routeCanView ? 'No view permission' : 'View journal details'}
-            disabled={!routeCanView}
-            onClick={() => navigate(`/accounting/manual-journal-entry/${row.id}`)}
-            className="mr-1 inline-flex rounded p-1.5 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Eye className="h-4 w-4" />
-          </button>
+          <>
+            {routeCanUpdate ? (
+              <button
+                type="button"
+                title="Edit description"
+                onClick={() => openDescriptionEdit(row)}
+                className="mr-1 inline-flex rounded p-1.5 text-slate-600 hover:bg-slate-100"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              title={!routeCanView ? 'No view permission' : 'View journal details'}
+              disabled={!routeCanView}
+              onClick={() => navigate(`/accounting/manual-journal-entry/${row.id}`)}
+              className="mr-1 inline-flex rounded p-1.5 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Eye className="h-4 w-4" />
+            </button>
+          </>
         )}
         onDeleteOne={(id) =>
           requestDelete({
@@ -389,6 +433,47 @@ export function ManualJournalEntryPage() {
           ) : undefined
         }
       />
+
+      <Modal
+        open={descEditOpen}
+        onClose={() => {
+          setDescEditOpen(false)
+          setDescEditEntry(null)
+        }}
+        title="Edit description"
+        className="max-w-lg"
+      >
+        <p className="mb-2 text-sm text-slate-600">
+          Only the journal header description is changed. Lines and amounts are not modified.
+        </p>
+        <label className="mb-1 block text-sm font-medium text-slate-700">Description</label>
+        <textarea
+          className="mb-4 min-h-[100px] w-full rounded-lg border border-slate-200 px-3 py-2"
+          value={descEditText}
+          onChange={(e) => setDescEditText(e.target.value)}
+          maxLength={4000}
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm"
+            onClick={() => {
+              setDescEditOpen(false)
+              setDescEditEntry(null)
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={descSaving || descEditEntry == null}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+            onClick={() => void saveDescriptionEdit()}
+          >
+            {descSaving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </Modal>
 
       <FundTransferModal
         open={transferOpen}
@@ -458,25 +543,32 @@ export function ManualJournalEntryPage() {
                 </div>
               ) : null}
             </div>
-            {/* <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
-              <p className="mb-1.5 font-semibold text-slate-700">Entry types</p>
-              <ul className="list-disc space-y-1 pl-4 marker:text-slate-400">
+            {/* <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-700">
+              <p className="mb-1.5 font-semibold text-slate-800">Entry types</p>
+              <ul className="mb-2 list-disc space-y-1 pl-4 marker:text-slate-400">
                 <li>
-                  <span className="font-medium text-slate-800">Normal</span> — everyday journals (sales, expenses,
-                  transfers). Use this unless you are doing period-end work.
+                  <span className="font-medium text-slate-900">Normal</span> — default for operations and for{' '}
+                  <strong>manual period close</strong> (recommended).
                 </li>
                 <li>
-                  <span className="font-medium text-slate-800">Adjusting</span> — period-end accruals, deferrals, and
-                  corrections before statements. Reports can treat these separately from routine activity.
+                  <span className="font-medium text-slate-900">Adjusting</span> — accruals / deferrals / corrections at
+                  period-end.
                 </li>
                 <li>
-                  <span className="font-medium text-slate-800">Closing</span> — closes the income statement into equity
-                  (e.g. retained earnings) for the period and clears the profit-and-loss accounts for the next cycle.
-                  Use only as part of
-                  your formal close process.
+                  <span className="font-medium text-slate-900">Closing</span> — optional; excluded from some trial-balance
+                  views. Prefer <strong>Normal</strong> when you post your own close-to-equity journal.
                 </li>
-              </ul> 
-            </div>*/}
+              </ul>
+              <p className="mb-1 font-semibold text-slate-800">Manual close example (net income 290)</p>
+              <p className="mb-1 text-slate-600">
+                Use entry type <strong>Normal</strong>. One journal, debits = credits:
+              </p>
+              <ul className="list-disc space-y-0.5 pl-4 font-mono text-[11px] text-slate-700 marker:text-slate-400">
+                <li>Dr Fuel Sales (Income) 750</li>
+                <li>Cr COGS 360 · Cr Rent expense 100 · Cr Retained earnings (Equity) 290</li>
+              </ul>
+              <p className="mt-1.5 text-slate-600">Replace accounts and amounts with your trial balance. Retained earnings must be an Equity chart account.</p>
+            </div> */}
           </div>
           <div className="md:col-span-2">
             <div className="mb-1 flex items-center justify-between">

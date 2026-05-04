@@ -27,9 +27,11 @@ import type {
   GeneratorUsage,
   GeneratorUsageWriteRequest,
   JournalEntry,
+  JournalEntryDescriptionPatchRequest,
   JournalEntryWriteRequest,
   ProfitLossReportDto,
   BalanceSheetReportDto,
+  CapitalStatementReportDto,
   CashOutDailyReportDto,
   DailySummaryReportDto,
   DailyFuelGivenRowDto,
@@ -625,6 +627,21 @@ export const apiSlice = createApi({
       query: (id) => ({ url: `JournalEntries/${id}`, method: 'DELETE' }),
       invalidatesTags: ['JournalEntry', 'FinancialReport'],
     }),
+    patchJournalEntryDescription: builder.mutation<
+      JournalEntry,
+      { id: number; body: JournalEntryDescriptionPatchRequest }
+    >({
+      query: ({ id, body }) => ({
+        url: `JournalEntries/${id}/description`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: (_result, _err, arg) => [
+        'JournalEntry',
+        'FinancialReport',
+        { type: 'JournalEntry', id: arg.id },
+      ],
+    }),
 
     getCustomerPayments: builder.query<PagedResult<CustomerPayment>, PagedArg>({
       query: ({ page, pageSize, q }) => ({
@@ -697,6 +714,13 @@ export const apiSlice = createApi({
       query: (params) => ({ url: 'FinancialReports/balance-sheet', params }),
       providesTags: ['FinancialReport'],
     }),
+    getCapitalStatementReport: builder.query<
+      CapitalStatementReportDto,
+      { businessId: number; from?: string; to?: string; stationId?: number; trialBalanceMode?: string }
+    >({
+      query: (params) => ({ url: 'FinancialReports/capital-statement', params }),
+      providesTags: ['FinancialReport'],
+    }),
 
     getRecurringJournalEntries: builder.query<
       any[],
@@ -754,8 +778,26 @@ export const apiSlice = createApi({
       query: (body) => ({ url: 'accounting-periods', method: 'POST', body }),
       invalidatesTags: ['AccountingPeriod'],
     }),
-    closeAccountingPeriod: builder.mutation<any, number>({
-      query: (id) => ({ url: `accounting-periods/${id}/close`, method: 'POST' }),
+    updateAccountingPeriod: builder.mutation<
+      unknown,
+      { id: number; body: { name: string; periodStart: string; periodEnd: string } }
+    >({
+      query: ({ id, body }) => ({ url: `accounting-periods/${id}`, method: 'PUT', body }),
+      invalidatesTags: ['AccountingPeriod'],
+    }),
+    deleteAccountingPeriod: builder.mutation<void, number>({
+      query: (id) => ({ url: `accounting-periods/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['AccountingPeriod'],
+    }),
+    markAccountingPeriodClosed: builder.mutation<
+      { message: string; closeJournalEntryId?: number | null },
+      { id: number; body?: { closeJournalEntryId?: number } }
+    >({
+      query: ({ id, body }) => ({
+        url: `accounting-periods/${id}/mark-closed`,
+        method: 'POST',
+        body: body ?? {},
+      }),
       invalidatesTags: ['AccountingPeriod', 'JournalEntry', 'FinancialReport'],
     }),
     reopenAccountingPeriod: builder.mutation<any, number>({
@@ -1365,6 +1407,7 @@ export const {
   useGetJournalEntryQuery,
   useCreateJournalEntryMutation,
   useDeleteJournalEntryMutation,
+  usePatchJournalEntryDescriptionMutation,
   useGetCustomerPaymentsQuery,
   useGetCustomerPaymentPreviewBalanceQuery,
   useCreateCustomerPaymentMutation,
@@ -1374,6 +1417,7 @@ export const {
   useGetGeneralLedgerReportQuery,
   useGetProfitLossReportQuery,
   useGetBalanceSheetReportQuery,
+  useGetCapitalStatementReportQuery,
   useGetRecurringJournalEntriesQuery,
   useCreateRecurringJournalEntryMutation,
   useUpdateRecurringJournalEntryMutation,
@@ -1382,7 +1426,9 @@ export const {
   useDeleteRecurringJournalEntryMutation,
   useGetAccountingPeriodsQuery,
   useCreateAccountingPeriodMutation,
-  useCloseAccountingPeriodMutation,
+  useUpdateAccountingPeriodMutation,
+  useDeleteAccountingPeriodMutation,
+  useMarkAccountingPeriodClosedMutation,
   useReopenAccountingPeriodMutation,
   useGetCustomerBalancesReportQuery,
   useGetSupplierBalancesReportQuery,

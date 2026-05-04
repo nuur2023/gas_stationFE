@@ -134,11 +134,12 @@ const DEFAULT_NAV: NavBlock[] = [
     submenus: [
       { name: 'Trial balance', route: '/financial-reports/trial-balance' },
       { name: 'General ledger', route: '/financial-reports/general-ledger' },
-      { name: 'Profit and loss', route: '/financial-reports/profit-and-loss' },
+      { name: 'Income Statement', route: '/financial-reports/profit-and-loss' },
       { name: 'Balance sheet', route: '/financial-reports/balance-sheet' },
+      { name: 'Capital Statement', route: '/financial-reports/capital-statement' },
       { name: 'Customer balances', route: '/financial-reports/customer-balances' },
       { name: 'Supplier balances', route: '/financial-reports/supplier-balances' },
-      { name: 'Daily cash flow', route: '/financial-reports/daily-cash-flow' },
+      { name: 'Cash flow statement', route: '/financial-reports/daily-cash-flow' },
     ],
   },
   {

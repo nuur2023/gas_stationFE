@@ -14,6 +14,7 @@ import {
   accountMatchesQuery,
   chartKey,
   collectExpandKeys,
+  isTemporaryBusinessAccount,
   sectionHasAnyMatch,
   subtreeHasMatch,
   type TreeAccountNode,
@@ -155,7 +156,9 @@ export function TreeChartsOfAccounts({
   const { rollupByAccountId, sectionTotalByChartId } = useMemo(() => {
     const rollup = new Map<number, number>()
     function compute(node: TreeAccountNode): number {
-      const own = directBalanceByAccountId.get(node.account.id) ?? 0
+      const rawOwn = directBalanceByAccountId.get(node.account.id) ?? 0
+      // Temporary top-level business accounts: do not roll their balance into chart/section math.
+      const own = isTemporaryBusinessAccount(node.account) ? 0 : rawOwn
       let childSum = 0
       for (const ch of node.children) childSum += compute(ch)
       const total = own + childSum

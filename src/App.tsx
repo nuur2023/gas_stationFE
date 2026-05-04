@@ -129,9 +129,22 @@ export function App() {
               <Route path="reports/outstanding-customers" element={<OutstandingCustomersReportPage />} />
               <Route path="reports/financial" element={<LegacyFinancialReportsRedirect />} />
               <Route path="financial-reports/trial-balance" element={<FinancialReportsPage />} />
+              <Route
+                path="financial-reports/trial-balance-unadjusted"
+                element={<Navigate to="/financial-reports/trial-balance?view=unadjusted" replace />}
+              />
+              <Route
+                path="financial-reports/trial-balance-adjusted"
+                element={<Navigate to="/financial-reports/trial-balance?view=adjusted" replace />}
+              />
+              <Route
+                path="financial-reports/trial-balance-post-closing"
+                element={<Navigate to="/financial-reports/trial-balance?view=postclosing" replace />}
+              />
               <Route path="financial-reports/general-ledger" element={<FinancialReportsPage />} />
               <Route path="financial-reports/profit-and-loss" element={<FinancialReportsPage />} />
               <Route path="financial-reports/balance-sheet" element={<FinancialReportsPage />} />
+              <Route path="financial-reports/capital-statement" element={<FinancialReportsPage />} />
               <Route path="financial-reports/customer-balances" element={<FinancialReportsPage />} />
               <Route path="financial-reports/supplier-balances" element={<FinancialReportsPage />} />
               <Route path="financial-reports/daily-cash-flow" element={<FinancialReportsPage />} />

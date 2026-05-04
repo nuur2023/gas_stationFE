@@ -31,6 +31,12 @@ import {
   useEffectiveStationId,
 } from '../../lib/stationContext'
 
+/** Backend parses invariant doubles; empty/null must not break batch create. */
+function normalizeInventoryLitersField(v: string | null | undefined): string {
+  const t = (v ?? '').trim()
+  return t === '' ? '0' : t
+}
+
 type InventorySaleRow = {
   id: number
   referenceNumber: string
@@ -283,10 +289,10 @@ export function InventorySalesPage() {
       {
         key: `${Date.now()}-${nozzleId}`,
         nozzleId,
-        openingLiters,
-        closingLiters,
-        sspLiters,
-        usdLiters,
+        openingLiters: normalizeInventoryLitersField(openingLiters),
+        closingLiters: normalizeInventoryLitersField(closingLiters),
+        sspLiters: normalizeInventoryLitersField(sspLiters),
+        usdLiters: normalizeInventoryLitersField(usdLiters),
       },
     ])
     setOpeningLiters(closingLiters)
@@ -306,10 +312,10 @@ export function InventorySalesPage() {
       recordedAt: `${recordDate}T12:00:00.000Z`,
       lines: batchLines.map((l) => ({
         nozzleId: l.nozzleId,
-        openingLiters: l.openingLiters,
-        closingLiters: l.closingLiters,
-        sspLiters: l.sspLiters,
-        usdLiters: l.usdLiters,
+        openingLiters: normalizeInventoryLitersField(l.openingLiters),
+        closingLiters: normalizeInventoryLitersField(l.closingLiters),
+        sspLiters: normalizeInventoryLitersField(l.sspLiters),
+        usdLiters: normalizeInventoryLitersField(l.usdLiters),
       })),
     }
     const fd = new FormData()
@@ -493,7 +499,12 @@ export function InventorySalesPage() {
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">SSP liters</label>
-              <input value={sspLiters} onChange={(e) => setSspLiters(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <input
+                value={sspLiters}
+                onChange={(e) => setSspLiters(e.target.value)}
+                onBlur={() => setSspLiters(normalizeInventoryLitersField(sspLiters))}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
               <label className="mb-1 mt-2 block text-sm font-medium text-slate-700">Total SSP amount</label>
               <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                 <input
@@ -509,7 +520,12 @@ export function InventorySalesPage() {
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">USD liters</label>
-              <input value={usdLiters} onChange={(e) => setUsdLiters(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <input
+                value={usdLiters}
+                onChange={(e) => setUsdLiters(e.target.value)}
+                onBlur={() => setUsdLiters(normalizeInventoryLitersField(usdLiters))}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
               <label className="mb-1 mt-2 block text-sm font-medium text-slate-700">Total USD amount</label>
               <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                 <input

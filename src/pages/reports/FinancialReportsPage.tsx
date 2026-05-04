@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { useAppSelector } from '../../app/hooks'
 import {
+  useGetAccountingPeriodsQuery,
   useGetAccountsQuery,
   useGetBalanceSheetReportQuery,
   useGetBusinessesQuery,
+  useGetCapitalStatementReportQuery,
   useGetCustomerBalancesReportQuery,
   useGetGeneralLedgerReportQuery,
   useGetProfitLossReportQuery,
@@ -17,12 +19,13 @@ import {
 import { DataTable, type Column } from '../../components/DataTable'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { isAccountsPayable, isAccountsReceivable } from '../../lib/accountingSubledger'
-import { formatDecimal } from '../../lib/formatNumber'
+import { formatDecimal, formatDecimalSigned } from '../../lib/formatNumber'
 import {
   filterAccountsForFinancialReportsPicker,
   filterAccountsForViewer,
   filterBusinessLeafAccounts,
 } from '../../lib/accountScope'
+import { cn } from '../../lib/cn'
 import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import {
   adminNeedsSettingsStation,
@@ -31,15 +34,87 @@ import {
   useEffectiveStationId,
 } from '../../lib/stationContext'
 import { BalanceSheetReportView } from './BalanceSheetReportView'
+import { CapitalStatementReportView } from './CapitalStatementReportView'
 import { ProfitLossReportView } from './ProfitLossReportView'
 
-type ReportKind = 'trial' | 'ledger' | 'pl' | 'bs' | 'customer' | 'supplier' | 'daily-cash-flow'
+type ReportKind = 'trial' | 'ledger' | 'pl' | 'bs' | 'capital' | 'customer' | 'supplier' | 'daily-cash-flow'
 
-const REPORT_KINDS: ReportKind[] = ['trial', 'ledger', 'pl', 'bs', 'customer', 'supplier', 'daily-cash-flow']
+const REPORT_KINDS: ReportKind[] = [
+  'trial',
+  'ledger',
+  'pl',
+  'bs',
+  'capital',
+  'customer',
+  'supplier',
+  'daily-cash-flow',
+]
 
 function parseKindParam(v: string | null): ReportKind | null {
   if (!v) return null
   return REPORT_KINDS.includes(v as ReportKind) ? (v as ReportKind) : null
+}
+
+/** Journal entry scope for trial balance, income statement, and balance sheet (URL `?view=`). */
+type FinancialEntryView = 'adjusted' | 'unadjusted' | 'postclosing'
+
+const FINANCIAL_ENTRY_VIEWS: readonly FinancialEntryView[] = ['unadjusted', 'adjusted', 'postclosing']
+
+function parseFinancialEntryViewParam(v: string | null): FinancialEntryView | null {
+  if (!v) return null
+  return FINANCIAL_ENTRY_VIEWS.includes(v as FinancialEntryView) ? (v as FinancialEntryView) : null
+}
+
+function entryViewReportTitle(
+  kind: 'trial' | 'pl' | 'bs' | 'capital' | 'ledger' | 'cashflow',
+  view: FinancialEntryView,
+): string {
+  const cap =
+    view === 'postclosing' ? 'Post-closing' : view === 'adjusted' ? 'Adjusted' : 'Unadjusted'
+  if (kind === 'trial') return `${cap} trial balance`
+  if (kind === 'bs') return `${cap} balance sheet`
+  if (kind === 'capital') return `${cap} capital statement`
+  if (kind === 'ledger') return `${cap} general ledger`
+  if (kind === 'cashflow') return `${cap} cash flow statement`
+  return `${cap} income statement`
+}
+
+function signedLedgerAmountClass(value: number): string {
+  if (!Number.isFinite(value)) return 'text-slate-500'
+  if (value > 0) return 'text-green-600'
+  if (value < 0) return 'text-red-600'
+  return 'text-slate-700'
+}
+
+function EntryViewTabs({
+  value,
+  onChange,
+}: {
+  value: FinancialEntryView
+  onChange: (v: FinancialEntryView) => void
+}) {
+  const tabs: { id: FinancialEntryView; label: string }[] = [
+    { id: 'unadjusted', label: 'Unadjusted' },
+    { id: 'adjusted', label: 'Adjusted' },
+    { id: 'postclosing', label: 'Post-closing' },
+  ]
+  return (
+    <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          onClick={() => onChange(t.id)}
+          className={cn(
+            'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+            value === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+          )}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function reportKindFromPathname(pathname: string): ReportKind | null {
@@ -52,6 +127,8 @@ function reportKindFromPathname(pathname: string): ReportKind | null {
       return 'pl'
     case '/financial-reports/balance-sheet':
       return 'bs'
+    case '/financial-reports/capital-statement':
+      return 'capital'
     case '/financial-reports/customer-balances':
       return 'customer'
     case '/financial-reports/supplier-balances':
@@ -61,6 +138,30 @@ function reportKindFromPathname(pathname: string): ReportKind | null {
     default:
       return null
   }
+}
+
+/** yyyy-MM-dd in local calendar; used as default From/To on financial reports. */
+function defaultReportDate(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+type PeriodRowLite = { periodStart: string; periodEnd: string; status: number }
+
+/** Prefer open period containing local today; else latest open period by end date; else latest period by end date. */
+function pickAccountingPeriodDateRange(rows: PeriodRowLite[]): { from: string; to: string } | null {
+  if (!rows.length) return null
+  const open = rows.filter((r) => r.status === 0)
+  const list = open.length > 0 ? open : rows
+  const t = new Date()
+  const todayStr = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+  const inRange = list.find((r) => {
+    const a = r.periodStart.slice(0, 10)
+    const b = r.periodEnd.slice(0, 10)
+    return a <= todayStr && todayStr <= b
+  })
+  const pick = inRange ?? [...list].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0]
+  if (!pick) return null
+  return { from: pick.periodStart.slice(0, 10), to: pick.periodEnd.slice(0, 10) }
 }
 
 function formatReportPeriod(from: string, to: string): string {
@@ -141,7 +242,7 @@ interface CustomerBalanceRow {
 
 export function FinancialReportsPage() {
   const location = useLocation()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { canView: routeCanView } = usePagePermissionActions()
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessIdRaw = useAppSelector((s) => s.auth.businessId)
@@ -170,8 +271,8 @@ export function FinancialReportsPage() {
     if (k) setKind(k)
   }, [location.pathname, searchParams])
 
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  const [from, setFrom] = useState(defaultReportDate)
+  const [to, setTo] = useState(defaultReportDate)
   const [bsAsOf, setBsAsOf] = useState('')
   const [trialBusinessId, setTrialBusinessId] = useState<number | null>(null)
   const [trialStationId, setTrialStationId] = useState<number | null>(null)
@@ -179,18 +280,35 @@ export function FinancialReportsPage() {
   const [trialPageSize, setTrialPageSize] = useState(50)
   const [trialSearch, setTrialSearch] = useState('')
   const [trialSelected, setTrialSelected] = useState<Set<number>>(new Set())
-  /** adjusted: exclude closing; unadjusted: exclude adjusting+closing; postclosing: all entries. */
-  const [reportTrialBalanceMode, setReportTrialBalanceMode] = useState<'adjusted' | 'unadjusted' | 'postclosing'>(
-    'adjusted',
+  const financialEntryView = useMemo((): FinancialEntryView | null => {
+    if (
+      kind !== 'trial' &&
+      kind !== 'pl' &&
+      kind !== 'bs' &&
+      kind !== 'capital' &&
+      kind !== 'ledger' &&
+      kind !== 'daily-cash-flow'
+    )
+      return null
+    return parseFinancialEntryViewParam(searchParams.get('view')) ?? 'adjusted'
+  }, [kind, searchParams])
+
+  const setFinancialEntryView = useCallback(
+    (v: FinancialEntryView) => {
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          p.set('view', v)
+          return p
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
   )
-  const trialBalanceModeOptions: SelectOption[] = useMemo(
-    () => [
-      { value: 'adjusted', label: 'Adjusted (exclude closing)' },
-      { value: 'unadjusted', label: 'Unadjusted (excl. adjusting & closing)' },
-      { value: 'postclosing', label: 'Post-closing (all entries)' },
-    ],
-    [],
-  )
+
+  /** URL `view` when on a report that supports entry tabs; otherwise defaults to adjusted. */
+  const effectiveReportTrialBalanceMode = financialEntryView ?? 'adjusted'
 
   const [plBusinessId, setPlBusinessId] = useState<number | null>(null)
   const [plStationId, setPlStationId] = useState<number | null>(null)
@@ -256,6 +374,7 @@ export function FinancialReportsPage() {
           kind !== 'pl' &&
           kind !== 'ledger' &&
           kind !== 'bs' &&
+          kind !== 'capital' &&
           kind !== 'customer' &&
           kind !== 'supplier' &&
           kind !== 'daily-cash-flow'),
@@ -266,10 +385,11 @@ export function FinancialReportsPage() {
     { skip: !isSuperAdmin || kind !== 'trial' || !trialBusinessId },
   )
 
-  const plStationsBusinessId = kind === 'pl' ? (isSuperAdmin ? (plBusinessId ?? 0) : authBusinessId) : 0
+  const plStationsBusinessId =
+    kind === 'pl' || kind === 'capital' ? (isSuperAdmin ? (plBusinessId ?? 0) : authBusinessId) : 0
   const { data: plStations } = useGetStationsQuery(
     { page: 1, pageSize: 500, businessId: plStationsBusinessId || undefined },
-    { skip: kind !== 'pl' || plStationsBusinessId <= 0 },
+    { skip: (kind !== 'pl' && kind !== 'capital') || plStationsBusinessId <= 0 },
   )
   const ledgerStationsBusinessId =
     kind === 'ledger' || kind === 'daily-cash-flow' ? (isSuperAdmin ? (ledgerBusinessId ?? 0) : authBusinessId) : 0
@@ -306,7 +426,7 @@ export function FinancialReportsPage() {
   }, [isSuperAdmin, kind, businesses?.items])
 
   useEffect(() => {
-    if (!isSuperAdmin || kind !== 'pl') return
+    if (!isSuperAdmin || (kind !== 'pl' && kind !== 'capital')) return
     const items = businesses?.items ?? []
     if (items.length === 0) return
     setPlBusinessId((prev) => {
@@ -360,6 +480,60 @@ export function FinancialReportsPage() {
 
   const effectiveBusinessId = isSuperAdmin ? (trialBusinessId ?? 0) : authBusinessId
   const effectivePlBusinessId = isSuperAdmin ? (plBusinessId ?? 0) : authBusinessId
+
+  const { data: accountingPeriodsTrial = [] } = useGetAccountingPeriodsQuery(
+    { businessId: effectiveBusinessId },
+    { skip: effectiveBusinessId <= 0 },
+  )
+  const { data: accountingPeriodsPl = [] } = useGetAccountingPeriodsQuery(
+    { businessId: effectivePlBusinessId },
+    { skip: effectivePlBusinessId <= 0 },
+  )
+
+  const periodDateAutoKeyRef = useRef<string>('')
+  const prevFinancialReportKindRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = prevFinancialReportKindRef.current
+    prevFinancialReportKindRef.current = kind
+    if (
+      (kind === 'trial' || kind === 'pl' || kind === 'capital') &&
+      prev != null &&
+      prev !== 'trial' &&
+      prev !== 'pl' &&
+      prev !== 'capital'
+    ) {
+      periodDateAutoKeyRef.current = ''
+    }
+  }, [kind])
+
+  useEffect(() => {
+    if (kind !== 'trial' && kind !== 'pl' && kind !== 'capital') return
+    const bid = kind === 'trial' ? effectiveBusinessId : effectivePlBusinessId
+    if (bid <= 0) return
+    const periods = (
+      kind === 'trial' ? accountingPeriodsTrial : accountingPeriodsPl
+    ) as PeriodRowLite[]
+    const effectKey = `${kind}-${bid}`
+
+    if (periods.length === 0) {
+      const emptyMark = `${effectKey}:empty`
+      if (periodDateAutoKeyRef.current !== emptyMark) {
+        const d = defaultReportDate()
+        setFrom(d)
+        setTo(d)
+        periodDateAutoKeyRef.current = emptyMark
+      }
+      return
+    }
+
+    const range = pickAccountingPeriodDateRange(periods)
+    if (!range) return
+    const fullKey = `${effectKey}:${range.from}:${range.to}`
+    if (periodDateAutoKeyRef.current === fullKey) return
+    periodDateAutoKeyRef.current = fullKey
+    setFrom(range.from)
+    setTo(range.to)
+  }, [kind, effectiveBusinessId, effectivePlBusinessId, accountingPeriodsTrial, accountingPeriodsPl])
   const effectiveLedgerBusinessId = isSuperAdmin ? (ledgerBusinessId ?? 0) : authBusinessId
   const effectiveBsBusinessId = isSuperAdmin ? (bsBusinessId ?? 0) : authBusinessId
   const effectiveCustomerBusinessId = isSuperAdmin ? (customerBusinessId ?? 0) : authBusinessId
@@ -383,7 +557,7 @@ export function FinancialReportsPage() {
       from: from || undefined,
       to: to || undefined,
       stationId: reportStationId(trialStationId),
-      trialBalanceMode: reportTrialBalanceMode,
+      trialBalanceMode: effectiveReportTrialBalanceMode,
     },
     { skip: kind !== 'trial' || effectiveBusinessId <= 0 || needsReportStation },
   )
@@ -395,7 +569,7 @@ export function FinancialReportsPage() {
       from: from || undefined,
       to: to || undefined,
       stationId: reportStationId(ledgerStationId),
-      trialBalanceMode: reportTrialBalanceMode,
+      trialBalanceMode: effectiveReportTrialBalanceMode,
     },
     {
       skip:
@@ -411,16 +585,26 @@ export function FinancialReportsPage() {
       from: from || undefined,
       to: to || undefined,
       stationId: reportStationId(plStationId),
-      trialBalanceMode: reportTrialBalanceMode,
+      trialBalanceMode: effectiveReportTrialBalanceMode,
     },
     { skip: kind !== 'pl' || effectivePlBusinessId <= 0 || needsReportStation },
+  )
+  const capital = useGetCapitalStatementReportQuery(
+    {
+      businessId: effectivePlBusinessId,
+      from: from || undefined,
+      to: to || undefined,
+      stationId: reportStationId(plStationId),
+      trialBalanceMode: effectiveReportTrialBalanceMode,
+    },
+    { skip: kind !== 'capital' || effectivePlBusinessId <= 0 || needsReportStation },
   )
   const bs = useGetBalanceSheetReportQuery(
     {
       businessId: effectiveBsBusinessId,
       to: bsAsOf || undefined,
       stationId: reportStationId(bsStationId),
-      trialBalanceMode: reportTrialBalanceMode,
+      trialBalanceMode: effectiveReportTrialBalanceMode,
     },
     { skip: kind !== 'bs' || effectiveBsBusinessId <= 0 || needsReportStation },
   )
@@ -802,8 +986,9 @@ export function FinancialReportsPage() {
 
   const handleLedgerExport = () => {
     if (ledgerRows.length === 0) return
+    const view = financialEntryView ?? 'adjusted'
     buildSimpleReportPdf(
-      'General Ledger',
+      entryViewReportTitle('ledger', view),
       formatReportPeriod(from, to),
       ['Date', 'Description', 'Debit', 'Credit', 'Balance'],
       ledgerRows.map((r) => [
@@ -818,8 +1003,9 @@ export function FinancialReportsPage() {
 
   const handleTrialExport = () => {
     if (trialRowsFiltered.length === 0) return
+    const view = financialEntryView ?? 'adjusted'
     buildSimpleReportPdf(
-      'Trial Balance',
+      entryViewReportTitle('trial', view),
       formatReportPeriod(from, to),
       ['Code', 'Name', 'Debit', 'Credit', 'Balance'],
       trialRowsFiltered.map((r) => [r.code, r.name, formatDecimal(r.debit), formatDecimal(r.credit), formatDecimal(r.balance)]),
@@ -828,16 +1014,17 @@ export function FinancialReportsPage() {
 
   const handleDailyCashFlowExport = () => {
     if (dailyCashFlowRows.length === 0) return
+    const view = financialEntryView ?? 'adjusted'
     buildSimpleReportPdf(
-      'Daily Cash Flow Report',
+      entryViewReportTitle('cashflow', view),
       formatReportPeriod(from, to),
       ['Date', 'Debit total', 'Credit total', 'Net', 'Cumulative'],
       dailyCashFlowRows.map((r) => [
         r.dateLabel,
         formatDecimal(r.totalDebit),
         formatDecimal(r.totalCredit),
-        formatDecimal(r.netMovement),
-        formatDecimal(r.endingBalance),
+        formatDecimalSigned(r.netMovement),
+        formatDecimalSigned(r.endingBalance),
       ]),
     )
   }
@@ -857,7 +1044,12 @@ export function FinancialReportsPage() {
     body.push(['Total expense', formatDecimal(pl.data.expenseTotal ?? 0), ''])
     body.push(['Net ordinary income', formatDecimal(pl.data.netOrdinaryIncome ?? 0), ''])
     body.push(['Net income', formatDecimal(pl.data.netIncome ?? 0), ''])
-    buildSimpleReportPdf('Profit & Loss', plPeriodLabel, ['Line', 'Amount', ''], body)
+    buildSimpleReportPdf(
+      entryViewReportTitle('pl', financialEntryView ?? 'adjusted'),
+      plPeriodLabel,
+      ['Line', 'Amount', ''],
+      body,
+    )
   }
 
   const handleBalanceSheetExport = () => {
@@ -873,7 +1065,48 @@ export function FinancialReportsPage() {
     for (const row of bs.data.equityAccounts ?? []) body.push([`${row.code} - ${row.name}`, formatDecimal(row.balance)])
     body.push(['Total equity', formatDecimal(bs.data.equity ?? 0)])
     body.push(['Total liabilities & equity', formatDecimal(bs.data.liabilitiesAndEquity ?? bs.data.liabilities + bs.data.equity)])
-    buildSimpleReportPdf('Balance Sheet', bsPeriodLabel, ['Account', 'Balance'], body)
+    buildSimpleReportPdf(
+      entryViewReportTitle('bs', financialEntryView ?? 'adjusted'),
+      bsPeriodLabel,
+      ['Account', 'Balance'],
+      body,
+    )
+  }
+
+  const handleCapitalStatementExport = () => {
+    if (!capital.data) return
+    const view = financialEntryView ?? 'adjusted'
+    const head = ['Account', 'Beginning', 'Change', 'Ending']
+    const body: Array<Array<string | number>> = []
+    for (const r of capital.data.equityRows ?? []) {
+      body.push([
+        `${r.code} · ${r.name}`,
+        formatDecimalSigned(r.beginning),
+        formatDecimalSigned(r.change),
+        formatDecimalSigned(r.ending),
+      ])
+    }
+    const ni = Number(capital.data.netIncome ?? 0)
+    const equityCount = capital.data.equityRows?.length ?? 0
+    const unadjusted = view === 'unadjusted'
+    const showNiRow = unadjusted && (equityCount > 0 || Math.abs(ni) > 1e-9)
+    if (showNiRow) {
+      body.push(['Net income (period)', formatDecimalSigned(0), formatDecimalSigned(ni), formatDecimalSigned(ni)])
+    }
+    const totalBeg = capital.data.totalBeginning
+    const totalChg = unadjusted ? capital.data.totalChange + ni : capital.data.totalChange
+    const totalEnd = unadjusted ? capital.data.totalEnding + ni : capital.data.totalEnding
+    body.push([
+      'Total equity',
+      formatDecimalSigned(totalBeg),
+      formatDecimalSigned(totalChg),
+      formatDecimalSigned(totalEnd),
+    ])
+    if (!unadjusted) {
+      body.push(['', '', '', ''])
+      body.push(['Net income (period)', formatDecimalSigned(ni), '', ''])
+    }
+    buildSimpleReportPdf(entryViewReportTitle('capital', view), plPeriodLabel, head, body)
   }
 
   const handleCustomerExport = () => {
@@ -897,6 +1130,7 @@ export function FinancialReportsPage() {
   }
 
   if (kind === 'ledger') {
+    const ledgerEntryView = financialEntryView ?? 'adjusted'
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -911,6 +1145,10 @@ export function FinancialReportsPage() {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Entry view</p>
+            <EntryViewTabs value={ledgerEntryView} onChange={setFinancialEntryView} />
+          </div>
           <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
             {isSuperAdmin && (
               <div className="w-full min-w-0 lg:w-52">
@@ -966,14 +1204,6 @@ export function FinancialReportsPage() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-              />
-            </div>
-            <div className="w-full min-w-0 lg:w-72">
-              <label className="mb-1 block text-sm font-medium text-slate-700">Entry view</label>
-              <FormSelect
-                options={trialBalanceModeOptions}
-                value={trialBalanceModeOptions.find((o) => o.value === reportTrialBalanceMode) ?? null}
-                onChange={(o) => setReportTrialBalanceMode((o?.value as typeof reportTrialBalanceMode) ?? 'adjusted')}
               />
             </div>
           </div>
@@ -1024,10 +1254,11 @@ export function FinancialReportsPage() {
   }
 
   if (kind === 'daily-cash-flow') {
+    const cashFlowEntryView = financialEntryView ?? 'adjusted'
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-xl font-semibold text-slate-900">Daily cash flow report</h1>
+          <h1 className="text-xl font-semibold text-slate-900">Cash flow statement</h1>
           <button
             type="button"
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -1037,11 +1268,15 @@ export function FinancialReportsPage() {
           </button>
         </div>
         <p className="text-sm text-slate-600">
-          Net movement by calendar day for the selected account (typically cash or bank). Uses the same journal lines as
-          the general ledger, aggregated per day.
+          Net movement by calendar day for the selected account (typically cash or bank). Uses the same journal lines and
+          entry view (Unadjusted / Adjusted / Post-closing) as the general ledger, aggregated per day.
         </p>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Entry view</p>
+            <EntryViewTabs value={cashFlowEntryView} onChange={setFinancialEntryView} />
+          </div>
           <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
             {isSuperAdmin && (
               <div className="w-full min-w-0 lg:w-52">
@@ -1099,14 +1334,6 @@ export function FinancialReportsPage() {
                 onChange={(e) => setTo(e.target.value)}
               />
             </div>
-            <div className="w-full min-w-0 lg:w-72">
-              <label className="mb-1 block text-sm font-medium text-slate-700">Entry view</label>
-              <FormSelect
-                options={trialBalanceModeOptions}
-                value={trialBalanceModeOptions.find((o) => o.value === reportTrialBalanceMode) ?? null}
-                onChange={(o) => setReportTrialBalanceMode((o?.value as typeof reportTrialBalanceMode) ?? 'adjusted')}
-              />
-            </div>
           </div>
         </div>
 
@@ -1115,7 +1342,9 @@ export function FinancialReportsPage() {
         ) : needsReportStation ? (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{reportStationBlockedMessage}</p>
         ) : !ledgerAccountId ? (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Select an account to load daily cash flow.</p>
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Select an account to load the cash flow statement.
+          </p>
         ) : (
           <div className="max-w-full overflow-x-auto overscroll-x-contain rounded-xl border border-slate-200 bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
             <table className="w-full min-w-[860px] divide-y divide-slate-200 text-sm">
@@ -1124,8 +1353,12 @@ export function FinancialReportsPage() {
                   <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">Date</th>
                   <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">Debit total</th>
                   <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">Credit total</th>
-                  <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">Net (debit − credit)</th>
-                  <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">Cumulative in period</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-600">
+                    Net (debit − credit)
+                  </th>
+                  <th className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-600">
+                    Cumulative in period
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1142,8 +1375,20 @@ export function FinancialReportsPage() {
                       <td className="px-4 py-2.5 text-slate-800">{r.dateLabel}</td>
                       <td className="px-4 py-2.5 text-slate-700">{r.totalDebit === 0 ? '—' : formatDecimal(r.totalDebit)}</td>
                       <td className="px-4 py-2.5 text-slate-700">{r.totalCredit === 0 ? '—' : formatDecimal(r.totalCredit)}</td>
-                      <td className="px-4 py-2.5 font-medium text-slate-900">{formatDecimal(r.netMovement)}</td>
-                      <td className="px-4 py-2.5 font-medium text-slate-900">{formatDecimal(r.endingBalance)}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <span
+                          className={`tabular-nums font-medium ${signedLedgerAmountClass(r.netMovement)}`}
+                        >
+                          {formatDecimalSigned(r.netMovement)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <span
+                          className={`tabular-nums font-medium ${signedLedgerAmountClass(r.endingBalance)}`}
+                        >
+                          {formatDecimalSigned(r.endingBalance)}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 {!ledger.isFetching && dailyCashFlowRows.length === 0 && (
@@ -1162,10 +1407,11 @@ export function FinancialReportsPage() {
   }
 
   if (kind === 'pl') {
+    const plEntryView = financialEntryView ?? 'adjusted'
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-xl font-semibold text-slate-900">Profit &amp; Loss</h1>
+          <h1 className="text-xl font-semibold text-slate-900">Income Statement</h1>
           <button
             type="button"
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -1176,6 +1422,10 @@ export function FinancialReportsPage() {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Entry view</p>
+            <EntryViewTabs value={plEntryView} onChange={setFinancialEntryView} />
+          </div>
           <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
             {isSuperAdmin && (
               <div className="w-full min-w-0 lg:w-52">
@@ -1222,19 +1472,7 @@ export function FinancialReportsPage() {
                 onChange={(e) => setTo(e.target.value)}
               />
             </div>
-            <div className="w-full min-w-0 lg:w-72">
-              <label className="mb-1 block text-sm font-medium text-slate-700">Entry view</label>
-              <FormSelect
-                options={trialBalanceModeOptions}
-                value={trialBalanceModeOptions.find((o) => o.value === reportTrialBalanceMode) ?? null}
-                onChange={(o) => setReportTrialBalanceMode((o?.value as typeof reportTrialBalanceMode) ?? 'adjusted')}
-              />
-            </div>
           </div>
-          <p className="mt-3 text-xs text-slate-500">
-            Assign accounts to chart types <strong>Income</strong>, <strong>COGS</strong>, or <strong>Expense</strong> for them to appear here.{' '}
-            <strong>Cash</strong> and other balance-sheet accounts affect the trial balance, not this report.
-          </p>
         </div>
 
         {effectivePlBusinessId <= 0 && isSuperAdmin ? (
@@ -1242,7 +1480,12 @@ export function FinancialReportsPage() {
         ) : needsReportStation ? (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{reportStationBlockedMessage}</p>
         ) : (
-          <ProfitLossReportView data={pl.data} isLoading={pl.isFetching} periodLabel={plPeriodLabel} />
+          <ProfitLossReportView
+            data={pl.data}
+            isLoading={pl.isFetching}
+            periodLabel={plPeriodLabel}
+            documentHeading={entryViewReportTitle('pl', plEntryView)}
+          />
         )}
       </div>
     )
@@ -1269,9 +1512,20 @@ export function FinancialReportsPage() {
   ]
 
   if (kind === 'trial') {
+    const trialEntryView = financialEntryView ?? 'adjusted'
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Entry view</p>
+            <EntryViewTabs
+              value={trialEntryView}
+              onChange={(v) => {
+                setFinancialEntryView(v)
+                setTrialPage(1)
+              }}
+            />
+          </div>
           <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
             {isSuperAdmin && (
               <div className="w-full min-w-0 lg:w-52">
@@ -1328,22 +1582,11 @@ export function FinancialReportsPage() {
                 }}
               />
             </div>
-            <div className="w-full min-w-0 lg:w-72">
-              <label className="mb-1 block text-sm font-medium text-slate-700">Entry view</label>
-              <FormSelect
-                options={trialBalanceModeOptions}
-                value={trialBalanceModeOptions.find((o) => o.value === reportTrialBalanceMode) ?? null}
-                onChange={(o) => {
-                  setReportTrialBalanceMode((o?.value as typeof reportTrialBalanceMode) ?? 'adjusted')
-                  setTrialPage(1)
-                }}
-              />
-            </div>
           </div>
-          <p className="mt-3 text-xs text-slate-500">
+          {/* <p className="mt-3 text-xs text-slate-500">
             Report loads automatically for the selected business. Use <strong>From</strong> / <strong>To</strong> to limit by
             journal entry date (optional).
-          </p>
+          </p> */}
         </div>
 
         {effectiveBusinessId <= 0 && isSuperAdmin ? (
@@ -1353,7 +1596,7 @@ export function FinancialReportsPage() {
         ) : (
           <DataTable<TrialBalanceRow>
             readOnly
-            title="Trial balance"
+            title={entryViewReportTitle('trial', trialEntryView)}
             extraToolbar={
               <button
                 type="button"
@@ -1396,6 +1639,7 @@ export function FinancialReportsPage() {
   }
 
   if (kind === 'bs') {
+    const bsEntryView = financialEntryView ?? 'adjusted'
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1410,6 +1654,10 @@ export function FinancialReportsPage() {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Entry view</p>
+            <EntryViewTabs value={bsEntryView} onChange={setFinancialEntryView} />
+          </div>
           <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
             {isSuperAdmin && (
               <div className="w-full min-w-0 lg:w-52">
@@ -1447,17 +1695,11 @@ export function FinancialReportsPage() {
                 onChange={(e) => setBsAsOf(e.target.value)}
               />
             </div>
-            <div className="w-full min-w-0 lg:w-72">
-              <label className="mb-1 block text-sm font-medium text-slate-700">Entry view</label>
-              <FormSelect
-                options={trialBalanceModeOptions}
-                value={trialBalanceModeOptions.find((o) => o.value === reportTrialBalanceMode) ?? null}
-                onChange={(o) => setReportTrialBalanceMode((o?.value as typeof reportTrialBalanceMode) ?? 'adjusted')}
-              />
-            </div>
           </div>
           <p className="mt-3 text-xs text-slate-500">
             Balances for <strong>Asset</strong>, <strong>Liability</strong>, and <strong>Equity</strong> accounts through the selected date (optional).
+            Use the entry view tabs: <strong>Unadjusted</strong> excludes adjusting and closing entries; <strong>Adjusted</strong> excludes closing only;{' '}
+            <strong>Post-closing</strong> includes all entries.
           </p>
         </div>
 
@@ -1466,7 +1708,102 @@ export function FinancialReportsPage() {
         ) : needsReportStation ? (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{reportStationBlockedMessage}</p>
         ) : (
-          <BalanceSheetReportView data={bs.data} isLoading={bs.isFetching} periodLabel={bsPeriodLabel} />
+          <BalanceSheetReportView
+            data={bs.data}
+            isLoading={bs.isFetching}
+            periodLabel={bsPeriodLabel}
+            documentHeading={entryViewReportTitle('bs', bsEntryView)}
+          />
+        )}
+      </div>
+    )
+  }
+
+  if (kind === 'capital') {
+    const capitalEntryView = financialEntryView ?? 'adjusted'
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold text-slate-900">Capital Statement</h1>
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            onClick={handleCapitalStatementExport}
+          >
+            Print / Export
+          </button>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Entry view</p>
+            <EntryViewTabs value={capitalEntryView} onChange={setFinancialEntryView} />
+          </div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
+            {isSuperAdmin && (
+              <div className="w-full min-w-0 lg:w-52">
+                <label className="mb-1 block text-sm font-medium text-slate-700">Business</label>
+                <FormSelect
+                  options={businessOptions}
+                  value={businessOptions.find((o) => o.value === String(plBusinessId ?? '')) ?? null}
+                  onChange={(opt) => {
+                    setPlBusinessId(opt ? Number(opt.value) : null)
+                    setPlStationId(null)
+                  }}
+                  placeholder="Select business"
+                />
+              </div>
+            )}
+            {showStationPicker && (
+              <div className="w-full min-w-0 lg:w-52">
+                <label className="mb-1 block text-sm font-medium text-slate-700">Station</label>
+                <FormSelect
+                  options={plStationOptions}
+                  value={plStationOptions.find((o) => o.value === String(plStationId ?? '')) ?? null}
+                  onChange={(opt) => setPlStationId(opt ? Number(opt.value) : null)}
+                  placeholder="All stations"
+                  isClearable
+                  isDisabled={effectivePlBusinessId <= 0 || (isSuperAdmin && !plBusinessId)}
+                />
+              </div>
+            )}
+            <div className="w-full min-w-0 sm:max-w-[11rem]">
+              <label className="mb-1 block text-sm font-medium text-slate-700">From</label>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+              />
+            </div>
+            <div className="w-full min-w-0 sm:max-w-[11rem]">
+              <label className="mb-1 block text-sm font-medium text-slate-700">To</label>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+              />
+            </div>
+          </div>
+          {/* <p className="mt-3 text-xs text-slate-500">
+            Beginning equity is cumulative through the day before <strong>From</strong>. Ending is through <strong>To</strong>.
+            Net income shown for the same dates matches the Income Statement for comparison with equity changes (including closing entries when applicable).
+          </p> */}
+        </div>
+
+        {effectivePlBusinessId <= 0 && isSuperAdmin ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Select a business to load the report.</p>
+        ) : needsReportStation ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{reportStationBlockedMessage}</p>
+        ) : (
+          <CapitalStatementReportView
+            data={capital.data}
+            isLoading={capital.isFetching}
+            periodLabel={plPeriodLabel}
+            documentHeading={entryViewReportTitle('capital', capitalEntryView)}
+            entryView={capitalEntryView}
+          />
         )}
       </div>
     )

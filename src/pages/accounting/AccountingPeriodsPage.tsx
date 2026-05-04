@@ -1,15 +1,19 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
-  useCloseAccountingPeriodMutation,
   useCreateAccountingPeriodMutation,
+  useDeleteAccountingPeriodMutation,
   useGetAccountingPeriodsQuery,
   useGetBusinessesQuery,
+  useMarkAccountingPeriodClosedMutation,
   useReopenAccountingPeriodMutation,
+  useUpdateAccountingPeriodMutation,
 } from '../../app/api/apiSlice'
 import { useAppSelector } from '../../app/hooks'
 import { DataTable, type Column } from '../../components/DataTable'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
+import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
 import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import { showBusinessPickerInForms } from '../../lib/stationContext'
 
@@ -31,8 +35,24 @@ function statusLabel(s: number): string {
   return 'Open'
 }
 
+function mutationErrorMessage(err: unknown): string {
+  if (err && typeof err === 'object' && 'data' in err) {
+    const d = (err as { data: unknown }).data
+    if (typeof d === 'string') return d
+    if (d && typeof d === 'object' && 'message' in d && typeof (d as { message: unknown }).message === 'string')
+      return (d as { message: string }).message
+  }
+  return 'Request failed. Try again.'
+}
+
+function dateInputFromIso(iso: string): string {
+  return iso.slice(0, 10)
+}
+
 export function AccountingPeriodsPage() {
-  const { canCreate: routeCanCreate } = usePagePermissionActions()
+  const { requestDelete, dialog: deleteDialog } = useDeleteConfirm()
+  const { canCreate: routeCanCreate, canUpdate: routeCanUpdate, canDelete: routeCanDelete } =
+    usePagePermissionActions()
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const showBizPicker = showBusinessPickerInForms(role)
@@ -41,14 +61,15 @@ export function AccountingPeriodsPage() {
   const [filterBusinessId, setFilterBusinessId] = useState<number | null>(authBusinessId ?? null)
   const effectiveBusinessId = showBizPicker ? (filterBusinessId ?? 0) : (authBusinessId ?? 0)
 
-  const { data: businesses } = useGetBusinessesQuery({ page: 1, pageSize: 500, q: undefined })
   const { data: rows = [], isFetching, refetch } = useGetAccountingPeriodsQuery(
     { businessId: effectiveBusinessId },
     { skip: effectiveBusinessId <= 0 },
   )
 
   const [createPeriod, { isLoading: creating }] = useCreateAccountingPeriodMutation()
-  const [closePeriod, { isLoading: closing }] = useCloseAccountingPeriodMutation()
+  const [updatePeriod, { isLoading: updating }] = useUpdateAccountingPeriodMutation()
+  const [deletePeriod] = useDeleteAccountingPeriodMutation()
+  const [markPeriodClosed, { isLoading: markingClosed }] = useMarkAccountingPeriodClosedMutation()
   const [reopenPeriod, { isLoading: reopening }] = useReopenAccountingPeriodMutation()
 
   const [open, setOpen] = useState(false)
@@ -57,6 +78,21 @@ export function AccountingPeriodsPage() {
   const [periodEnd, setPeriodEnd] = useState(() => new Date().toISOString().slice(0, 10))
   const [, setSelected] = useState<Set<number>>(new Set())
 
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingRow, setEditingRow] = useState<PeriodRow | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editPeriodStart, setEditPeriodStart] = useState('')
+  const [editPeriodEnd, setEditPeriodEnd] = useState('')
+
+  const [autoCloseRow, setAutoCloseRow] = useState<PeriodRow | null>(null)
+  const [autoCloseJournalId, setAutoCloseJournalId] = useState('')
+  const [autoCloseError, setAutoCloseError] = useState<string | null>(null)
+
+  const [reopenConfirmRow, setReopenConfirmRow] = useState<PeriodRow | null>(null)
+  const [reopenError, setReopenError] = useState<string | null>(null)
+  const [periodHint, setPeriodHint] = useState<string | null>(null)
+
+  const { data: businesses } = useGetBusinessesQuery({ page: 1, pageSize: 500, q: undefined })
   const businessOptions: SelectOption[] = useMemo(() => {
     const items = businesses?.items ?? []
     if (showBizPicker) return items.map((x) => ({ value: String(x.id), label: x.name }))
@@ -73,6 +109,12 @@ export function AccountingPeriodsPage() {
     return null
   }, [name, periodStart, periodEnd])
 
+  const editFormError = useMemo(() => {
+    if (!editName.trim()) return 'Period name is required.'
+    if (editPeriodEnd < editPeriodStart) return 'Period end must be on or after period start.'
+    return null
+  }, [editName, editPeriodStart, editPeriodEnd])
+
   async function savePeriod() {
     if (formError != null || effectiveBusinessId <= 0) return
     await createPeriod({
@@ -86,6 +128,50 @@ export function AccountingPeriodsPage() {
     setPeriodStart(new Date().toISOString().slice(0, 10))
     setPeriodEnd(new Date().toISOString().slice(0, 10))
     void refetch()
+  }
+
+  function openEdit(row: PeriodRow) {
+    if (row.status !== 0) {
+      setPeriodHint('Only open periods can be edited. Reopen the period first if you need to change it.')
+      window.setTimeout(() => setPeriodHint(null), 7000)
+      return
+    }
+    setEditingRow(row)
+    setEditName(row.name)
+    setEditPeriodStart(dateInputFromIso(row.periodStart))
+    setEditPeriodEnd(dateInputFromIso(row.periodEnd))
+    setEditOpen(true)
+  }
+
+  async function saveEdit() {
+    if (editFormError != null || !editingRow) return
+    await updatePeriod({
+      id: editingRow.id,
+      body: {
+        name: editName.trim(),
+        periodStart: `${editPeriodStart}T12:00:00.000Z`,
+        periodEnd: `${editPeriodEnd}T12:00:00.000Z`,
+      },
+    }).unwrap()
+    setEditOpen(false)
+    setEditingRow(null)
+    void refetch()
+  }
+
+  function handleDeleteOne(id: number) {
+    requestDelete({
+      title: 'Delete this accounting period?',
+      description: 'The period row will be removed. Posted journals are not deleted.',
+      action: async () => {
+        await deletePeriod(id).unwrap()
+        setSelected((prev) => {
+          const n = new Set(prev)
+          n.delete(id)
+          return n
+        })
+        void refetch()
+      },
+    })
   }
 
   const cols: Column<PeriodRow>[] = useMemo(
@@ -103,8 +189,26 @@ export function AccountingPeriodsPage() {
     [],
   )
 
+  const canReopen = routeCanUpdate || isSuperAdmin
+
   return (
     <>
+      {deleteDialog}
+      {periodHint ? (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">{periodHint}</div>
+      ) : null}
+      <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+        <p className="font-medium text-slate-900">Period close is manual</p>
+        <p className="mt-1 text-slate-700">
+          Post your close in{' '}
+          <Link to="/accounting/manual-journal-entry" className="font-medium text-emerald-800 underline">
+            Manual journal entry
+          </Link>{' '}
+          first, then click <strong>Auto-close</strong> on the open period. A confirmation dialog explains that only the
+          period status is updated (no journal is posted). Optional: link the closing journal id for your records.
+        </p>
+      </div>
+
       {showBizPicker && (
         <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <label className="mb-1 block text-sm font-medium text-slate-700">Business</label>
@@ -136,41 +240,40 @@ export function AccountingPeriodsPage() {
         selectedIds={new Set()}
         onSelectedIdsChange={setSelected}
         onAdd={routeCanCreate && effectiveBusinessId > 0 ? () => setOpen(true) : undefined}
-        onDeleteOne={() => {}}
+        onEdit={routeCanUpdate ? openEdit : undefined}
+        onDeleteOne={routeCanDelete ? handleDeleteOne : () => {}}
         onDeleteSelected={() => {}}
-        tableActionPermissions={{ canCreate: routeCanCreate, canUpdate: false, canDelete: false }}
+        tableActionPermissions={{
+          canCreate: routeCanCreate,
+          canUpdate: routeCanUpdate,
+          canDelete: routeCanDelete,
+        }}
         renderExtraRowActions={(row) => (
           <span className="inline-flex flex-wrap gap-1">
-            {row.status === 0 && (
+            {row.status === 0 && routeCanUpdate && (
               <button
                 type="button"
-                disabled={closing}
-                className="rounded border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                title="Posts closing entry and locks the period for new journals"
+                disabled={markingClosed}
+                className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                title="Confirm after posting your manual close journal — updates period status only"
                 onClick={() => {
-                  void (async () => {
-                    if (!window.confirm(`Close period "${row.name}"? This will post closing entries where configured.`))
-                      return
-                    await closePeriod(row.id).unwrap()
-                    void refetch()
-                  })()
+                  setAutoCloseError(null)
+                  setAutoCloseJournalId('')
+                  setAutoCloseRow(row)
                 }}
               >
-                Close
+                Auto-close
               </button>
             )}
-            {row.status === 1 && isSuperAdmin && (
+            {row.status === 1 && canReopen && (
               <button
                 type="button"
                 disabled={reopening}
                 className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-                title="SuperAdmin only — closing journal is not reversed automatically"
+                title="Reopens the period record only — journals are not reversed"
                 onClick={() => {
-                  void (async () => {
-                    if (!window.confirm('Reopen this period? Closing entries are not reversed automatically.')) return
-                    await reopenPeriod(row.id).unwrap()
-                    void refetch()
-                  })()
+                  setReopenError(null)
+                  setReopenConfirmRow(row)
                 }}
               >
                 Reopen
@@ -183,6 +286,147 @@ export function AccountingPeriodsPage() {
       {effectiveBusinessId <= 0 && showBizPicker ? (
         <p className="mt-2 text-sm text-amber-800">Select a business to view accounting periods.</p>
       ) : null}
+
+      <Modal
+        open={autoCloseRow != null}
+        onClose={() => {
+          setAutoCloseRow(null)
+          setAutoCloseJournalId('')
+          setAutoCloseError(null)
+        }}
+        title="Auto-close this period?"
+        className="max-w-md"
+      >
+        {autoCloseRow ? (
+          <div className="space-y-3 text-sm text-slate-700">
+            <p>
+              You are about to mark <span className="font-semibold text-slate-900">{autoCloseRow.name}</span> as{' '}
+              <strong>closed</strong> in the system.
+            </p>
+            <ul className="list-disc space-y-1 pl-4 text-slate-600">
+              <li>
+                This does <strong>not</strong> create or post any journal — do that first in{' '}
+                <Link to="/accounting/manual-journal-entry" className="font-medium text-emerald-800 underline">
+                  Manual journal entry
+                </Link>
+                .
+              </li>
+              <li>After you confirm, the period shows Closed and new routine journals in that date range may be blocked.</li>
+              <li>You can use <strong>Reopen</strong> later if needed (journals stay as posted).</li>
+            </ul>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Closing journal id (optional)</label>
+              <input
+                type="number"
+                min={1}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                placeholder="e.g. 42"
+                value={autoCloseJournalId}
+                onChange={(e) => setAutoCloseJournalId(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-slate-500">Stored on the period for reference; must belong to this business.</p>
+            </div>
+            {autoCloseError ? (
+              <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-900">{autoCloseError}</p>
+            ) : null}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  setAutoCloseRow(null)
+                  setAutoCloseJournalId('')
+                  setAutoCloseError(null)
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={markingClosed}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                onClick={() => {
+                  void (async () => {
+                    if (!autoCloseRow) return
+                    setAutoCloseError(null)
+                    const trimmed = autoCloseJournalId.trim()
+                    const jid = trimmed === '' ? undefined : Number.parseInt(trimmed, 10)
+                    if (jid !== undefined && (!Number.isFinite(jid) || jid <= 0)) {
+                      setAutoCloseError('Journal id must be a positive number or left blank.')
+                      return
+                    }
+                    try {
+                      await markPeriodClosed({
+                        id: autoCloseRow.id,
+                        body: jid !== undefined ? { closeJournalEntryId: jid } : {},
+                      }).unwrap()
+                      setAutoCloseRow(null)
+                      setAutoCloseJournalId('')
+                      void refetch()
+                    } catch (e) {
+                      setAutoCloseError(mutationErrorMessage(e))
+                    }
+                  })()
+                }}
+              >
+                {markingClosed ? 'Saving…' : 'Confirm auto-close'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={reopenConfirmRow != null}
+        onClose={() => {
+          setReopenConfirmRow(null)
+          setReopenError(null)
+        }}
+        title="Reopen period?"
+        className="max-w-md"
+      >
+        {reopenConfirmRow ? (
+          <div className="space-y-3 text-sm text-slate-700">
+            <p>
+              Reopen <span className="font-semibold text-slate-900">{reopenConfirmRow.name}</span>? Posted journals are{' '}
+              <strong>not</strong> reversed — adjust manually if needed.
+            </p>
+            {reopenError ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-900">{reopenError}</p> : null}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  setReopenConfirmRow(null)
+                  setReopenError(null)
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={reopening}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                onClick={() => {
+                  void (async () => {
+                    if (!reopenConfirmRow) return
+                    setReopenError(null)
+                    try {
+                      await reopenPeriod(reopenConfirmRow.id).unwrap()
+                      setReopenConfirmRow(null)
+                      void refetch()
+                    } catch (e) {
+                      setReopenError(mutationErrorMessage(e))
+                    }
+                  })()
+                }}
+              >
+                {reopening ? 'Reopening…' : 'Reopen'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal open={open} onClose={() => setOpen(false)} title="New accounting period" className="max-w-md">
         <div className="space-y-3">
@@ -231,6 +475,57 @@ export function AccountingPeriodsPage() {
               onClick={() => void savePeriod()}
             >
               Create
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit accounting period" className="max-w-md">
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Name</label>
+            <input
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Period start</label>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={editPeriodStart}
+                onChange={(e) => setEditPeriodStart(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Period end</label>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={editPeriodEnd}
+                onChange={(e) => setEditPeriodEnd(e.target.value)}
+              />
+            </div>
+          </div>
+          {editFormError ? <p className="text-sm text-rose-600">{editFormError}</p> : null}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              onClick={() => setEditOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!!editFormError || updating || !editingRow}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              onClick={() => void saveEdit()}
+            >
+              Save
             </button>
           </div>
         </div>
