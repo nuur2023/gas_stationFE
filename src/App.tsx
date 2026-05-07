@@ -20,7 +20,13 @@ import { GeneratorUsageReportPage } from './pages/reports/GeneratorUsageReportPa
 import { GeneralDailyReportPage } from './pages/reports/GeneralDailyReportPage'
 import { InventoryDailyReportPage } from './pages/reports/InventoryDailyReportPage'
 import { OutstandingCustomersReportPage } from './pages/reports/OutstandingCustomersReportPage'
+import { DailyStationReportPage } from './pages/reports/DailyStationReportPage'
 import { FinancialReportsPage } from './pages/reports/FinancialReportsPage'
+import {
+  CashOrUsdTakenReportPage,
+  ExchangeReportPage,
+  ExpenseReportPage,
+} from './pages/reports/ExpenseExchangeReportsPages'
 import { ToastProvider } from './components/ToastProvider'
 import { PurchaseDetailPage } from './pages/operations/PurchaseDetailPage'
 import { PurchasesPage } from './pages/operations/PurchasesPage'
@@ -86,7 +92,11 @@ export function App() {
               <Route path="setup/fuel-prices" element={<FuelPricesPage />} />
               <Route path="setup/settings" element={<SettingsPage />} />
               <Route path="fuel-sales" element={<Navigate to="/inventory" replace />} />
-              <Route path="expenses" element={<ExpensesPage />} />
+              <Route path="expenses" element={<ExpensesPage sideAction="Operation" />} />
+              <Route path="management/expenses" element={<ExpensesPage sideAction="Management" />} />
+              <Route path="operations/exchange" element={<ExpensesPage expenseKind="Exchange" sideAction="Operation" />} />
+              <Route path="management/exchange" element={<ExpensesPage expenseKind="Exchange" sideAction="Management" />} />
+              <Route path="operations/cash-usd-taken" element={<ExpensesPage expenseKind="cashOrUsdTaken" sideAction="Operation" />} />
               <Route path="inventory" element={<InventorySalesPage />} />
               <Route path="inventory/:saleId" element={<InventorySaleDetailPage />} />
               <Route path="rates" element={<RatesPage />} />
@@ -122,10 +132,14 @@ export function App() {
               <Route path="reports/liter-received" element={<LiterReceivedReportPage />} />
               <Route path="reports/daily-cash-sales" element={<DailyCashSalesReportPage />} />
               <Route path="reports/cash-out-daily" element={<CashOutDailyReportPage />} />
+              <Route path="reports/expenses" element={<ExpenseReportPage />} />
+              <Route path="reports/exchange" element={<ExchangeReportPage />} />
+              <Route path="reports/cash-usd-taken" element={<CashOrUsdTakenReportPage />} />
               <Route path="reports/daily-fuel-given" element={<DailyFuelGivenReportPage />} />
               <Route path="reports/generator-usage" element={<GeneratorUsageReportPage />} />
               <Route path="reports/general-daily" element={<GeneralDailyReportPage />} />
               <Route path="reports/inventory-daily" element={<InventoryDailyReportPage />} />
+              <Route path="reports/daily-station" element={<DailyStationReportPage />} />
               <Route path="reports/outstanding-customers" element={<OutstandingCustomersReportPage />} />
               <Route path="reports/financial" element={<LegacyFinancialReportsRedirect />} />
               <Route path="financial-reports/trial-balance" element={<FinancialReportsPage />} />
@@ -148,6 +162,7 @@ export function App() {
               <Route path="financial-reports/customer-balances" element={<FinancialReportsPage />} />
               <Route path="financial-reports/supplier-balances" element={<FinancialReportsPage />} />
               <Route path="financial-reports/daily-cash-flow" element={<FinancialReportsPage />} />
+              <Route path="financial-reports/report-period-view" element={<FinancialReportsPage />} />
               <Route path="stations" element={<StationsPage />} />
               {/* Legacy URLs */}
               <Route path="operations/fuel-sales" element={<Navigate to="/inventory" replace />} />

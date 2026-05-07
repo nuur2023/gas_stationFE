@@ -32,9 +32,11 @@ import type {
   ProfitLossReportDto,
   BalanceSheetReportDto,
   CapitalStatementReportDto,
+  ReportPeriodViewDto,
   CashOutDailyReportDto,
   DailySummaryReportDto,
   DailyFuelGivenRowDto,
+  DailyStationReportDto,
   Inventory,
   InventoryBatchCreateResponse,
   InventorySaleDetail,
@@ -478,13 +480,15 @@ export const apiSlice = createApi({
       providesTags: ['Pump'],
     }),
 
-    getExpenses: builder.query<PagedResult<Expense>, StationScopedPagedArg>({
-      query: ({ page, pageSize, q, filterStationId }) => ({
+    getExpenses: builder.query<PagedResult<Expense>, StationScopedPagedArg & { type?: string; sideAction?: string }>({
+      query: ({ page, pageSize, q, filterStationId, type, sideAction }) => ({
         url: 'Expenses',
         params: {
           page,
           pageSize,
           q,
+          ...(type ? { type } : {}),
+          ...(sideAction ? { sideAction } : {}),
           ...(filterStationId != null && filterStationId > 0 ? { filterStationId } : {}),
         },
       }),
@@ -582,6 +586,18 @@ export const apiSlice = createApi({
         params: { businessId },
       }),
       providesTags: ['ChartsOfAccounts'],
+    }),
+    createChartsOfAccounts: builder.mutation<ChartsOfAccounts, { type: string }>({
+      query: (body) => ({ url: 'ChartsOfAccounts', method: 'POST', body }),
+      invalidatesTags: ['ChartsOfAccounts'],
+    }),
+    updateChartsOfAccounts: builder.mutation<ChartsOfAccounts, { id: number; body: { type: string } }>({
+      query: ({ id, body }) => ({ url: `ChartsOfAccounts/${id}`, method: 'PUT', body }),
+      invalidatesTags: ['ChartsOfAccounts'],
+    }),
+    deleteChartsOfAccounts: builder.mutation<void, number>({
+      query: (id) => ({ url: `ChartsOfAccounts/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['ChartsOfAccounts'],
     }),
     createAccount: builder.mutation<Account, AccountWriteRequest>({
       query: (body) => ({ url: 'Accounts', method: 'POST', body }),
@@ -721,6 +737,13 @@ export const apiSlice = createApi({
       query: (params) => ({ url: 'FinancialReports/capital-statement', params }),
       providesTags: ['FinancialReport'],
     }),
+    getReportPeriodView: builder.query<
+      ReportPeriodViewDto,
+      { businessId: number; from?: string; to?: string; stationId?: number; trialBalanceMode?: string }
+    >({
+      query: (params) => ({ url: 'FinancialReports/report-period-view', params }),
+      providesTags: ['FinancialReport'],
+    }),
 
     getRecurringJournalEntries: builder.query<
       any[],
@@ -833,14 +856,15 @@ export const apiSlice = createApi({
 
     getCashOutDailyReport: builder.query<
       CashOutDailyReportDto,
-      { businessId: number; from?: string; to?: string; stationId?: number }
+      { businessId: number; from?: string; to?: string; stationId?: number; expenseType?: string }
     >({
-      query: ({ businessId, from, to, stationId }) => ({
+      query: ({ businessId, from, to, stationId, expenseType }) => ({
         url: 'OperationReports/cash-out-daily',
         params: {
           businessId,
           ...(from ? { from } : {}),
           ...(to ? { to } : {}),
+          ...(expenseType ? { expenseType } : {}),
           ...(stationId != null && stationId > 0 ? { stationId } : {}),
         },
       }),
@@ -860,6 +884,21 @@ export const apiSlice = createApi({
         },
       }),
       providesTags: ['CustomerFuelGiven', 'FinancialReport'],
+    }),
+    getDailyStationReport: builder.query<
+      DailyStationReportDto,
+      { businessId: number; stationId?: number; from?: string; to?: string }
+    >({
+      query: ({ businessId, stationId, from, to }) => ({
+        url: 'OperationReports/daily-station-report',
+        params: {
+          businessId,
+          ...(stationId != null && stationId > 0 ? { stationId } : {}),
+          ...(from ? { from } : {}),
+          ...(to ? { to } : {}),
+        },
+      }),
+      providesTags: ['Expense', 'Inventory', 'FinancialReport'],
     }),
     getDailySummaryReport: builder.query<
       DailySummaryReportDto,
@@ -1062,8 +1101,12 @@ export const apiSlice = createApi({
       query: ({ id, body }) => ({ url: `LiterReceiveds/${id}`, method: 'PUT', body }),
       invalidatesTags: ['LiterReceived', 'BusinessFuelInventory', 'Notification'],
     }),
-    deleteLiterReceived: builder.mutation<void, number>({
-      query: (id) => ({ url: `LiterReceiveds/${id}`, method: 'DELETE' }),
+    deleteLiterReceived: builder.mutation<void, { id: number; clampDippingToZero?: boolean }>({
+      query: ({ id, clampDippingToZero }) => ({
+        url: `LiterReceiveds/${id}`,
+        method: 'DELETE',
+        params: clampDippingToZero ? { clampDippingToZero: true } : undefined,
+      }),
       invalidatesTags: ['LiterReceived'],
     }),
 
@@ -1399,6 +1442,9 @@ export const {
   useGetAccountsQuery,
   useGetAccountParentCandidatesQuery,
   useGetChartsOfAccountsQuery,
+  useCreateChartsOfAccountsMutation,
+  useUpdateChartsOfAccountsMutation,
+  useDeleteChartsOfAccountsMutation,
   useCreateAccountMutation,
   useUpdateAccountMutation,
   useDeleteAccountMutation,
@@ -1418,6 +1464,7 @@ export const {
   useGetProfitLossReportQuery,
   useGetBalanceSheetReportQuery,
   useGetCapitalStatementReportQuery,
+  useGetReportPeriodViewQuery,
   useGetRecurringJournalEntriesQuery,
   useCreateRecurringJournalEntryMutation,
   useUpdateRecurringJournalEntryMutation,
@@ -1435,6 +1482,7 @@ export const {
   useGetCashOutDailyReportQuery,
   useGetDailySummaryReportQuery,
   useGetDailyFuelGivenReportQuery,
+  useGetDailyStationReportQuery,
   useCreateExpenseMutation,
   useUpdateExpenseMutation,
   useDeleteExpenseMutation,

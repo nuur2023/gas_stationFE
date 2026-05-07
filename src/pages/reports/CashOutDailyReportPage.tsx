@@ -34,7 +34,15 @@ function openPdfInNewTab(doc: jsPDF) {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
-export function CashOutDailyReportPage() {
+export function CashOutDailyReportPage({
+  expenseType,
+  title = 'Cash out daily report',
+  tableTitle = 'Cash out',
+}: {
+  expenseType?: 'Expense' | 'Exchange' | 'cashOrUsdTaken'
+  title?: string
+  tableTitle?: string
+} = {}) {
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const showBizPicker = showBusinessPickerInForms(role)
@@ -86,6 +94,7 @@ export function CashOutDailyReportPage() {
       businessId: effectiveBusinessId,
       from: !dateRangeInvalid && from ? `${from}T00:00:00` : undefined,
       to: !dateRangeInvalid && to ? `${to}T00:00:00` : undefined,
+      expenseType,
       stationId: apiStationId,
     },
     { skip: effectiveBusinessId <= 0 || dateRangeInvalid || needsWorkspaceStation },
@@ -223,9 +232,9 @@ export function CashOutDailyReportPage() {
     <div className="mx-auto max-w-7xl space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Cash out daily report</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
           <p className="mt-1 text-sm text-slate-600">
-          cash out daily report
+          {title}
           </p>
         </div>
         <button
@@ -296,7 +305,7 @@ export function CashOutDailyReportPage() {
       {isError && <p className="text-sm text-red-600">Could not load report.</p>}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-800">Cash out</div>
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-800">{tableTitle}</div>
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
@@ -314,7 +323,7 @@ export function CashOutDailyReportPage() {
             {lines.length === 0 && (
               <tr>
                 <td colSpan={tableColCount} className="px-4 py-8 text-center text-slate-500">
-                  {isFetching ? 'Loading…' : needsWorkspaceStation ? '—' : 'No expense rows in this range.'}
+                  {isFetching ? 'Loading…' : needsWorkspaceStation ? '—' : 'No rows in this range.'}
                 </td>
               </tr>
             )}

@@ -146,6 +146,8 @@ export interface NozzleForPumpRow {
 
 export interface Expense {
   id: number
+  type: 'Expense' | 'Exchange' | 'cashOrUsdTaken'
+  sideAction: 'Operation' | 'Management'
   date: string
   description: string
   currencyCode: string
@@ -212,6 +214,54 @@ export interface DailyFuelGivenRowDto {
   totalAmount: number
   usdAmount: number
   transactionCount: number
+}
+
+export interface DailyStationAmountRowDto {
+  amount: number
+  description: string
+  date: string
+}
+
+export interface DailyStationExchangeRowDto {
+  amountSsp: number
+  rate: number
+  usd: number
+  date: string
+}
+
+export interface DailyStationCashTakenRowDto {
+  amountSsp: number
+  amountUsd: number
+  date: string
+}
+
+export interface DailyStationFuelRowDto {
+  type: string
+  litersSold: number
+  ssp: number
+  usd: number
+  inDipping: number
+  date: string
+}
+
+export interface DailyStationFuelPriceDto {
+  petrolSsp: number
+  dieselSsp: number
+  petrolUsd: number
+  dieselUsd: number
+}
+
+export interface DailyStationReportDto {
+  stationName: string
+  from: string
+  to: string
+  fuelPrices: DailyStationFuelPriceDto
+  expenseFromStation: DailyStationAmountRowDto[]
+  fuelReport: DailyStationFuelRowDto[]
+  exchangeFromStation: DailyStationExchangeRowDto[]
+  cashTakenFromStation: DailyStationCashTakenRowDto[]
+  expenseFromOffice: DailyStationAmountRowDto[]
+  exchangeFromOffice: DailyStationExchangeRowDto[]
 }
 
 export interface Inventory {
@@ -403,6 +453,34 @@ export interface CapitalStatementReportDto {
   netIncome: number
 }
 
+export interface ReportPeriodViewDto {
+  incomeStatement: {
+    incomeAccounts: ProfitLossAccountRow[]
+    cogsAccounts: ProfitLossAccountRow[]
+    expenseAccounts: ProfitLossAccountRow[]
+    sales: number
+    cogs: number
+    grossProfit: number
+    totalExpense: number
+    netIncome: number
+  }
+  balanceSheet: {
+    totalAsset: number
+    totalEquity: number
+    netIncome: number
+    assets: BalanceSheetAccountRow[]
+    liabilities: BalanceSheetAccountRow[]
+    equity: BalanceSheetAccountRow[]
+  }
+  cashFlowStatement: {
+    receivedAccounts: ProfitLossAccountRow[]
+    paidAccounts: ProfitLossAccountRow[]
+    cashReceivedFromFuelSales: number
+    cashPaidForExpense: number
+    netCashFromOperating: number
+  }
+}
+
 export interface JournalEntryLineWriteRequest {
   accountId: number
   debit: string
@@ -422,9 +500,10 @@ export interface JournalEntryWriteRequest {
   lines: JournalEntryLineWriteRequest[]
 }
 
-/** PATCH api/JournalEntries/{id}/description — lines and amounts unchanged. */
+/** PATCH api/JournalEntries/{id}/description — updates header fields; lines and amounts unchanged. */
 export interface JournalEntryDescriptionPatchRequest {
   description: string
+  date?: string
 }
 
 export interface CustomerPayment {
@@ -475,6 +554,8 @@ export interface OutstandingCustomerFuelGivenRow {
 }
 
 export interface ExpenseWriteRequest {
+  type: 'Expense' | 'Exchange' | 'cashOrUsdTaken'
+  sideAction: 'Operation' | 'Management'
   description: string
   currencyCode: string
   localAmount: string

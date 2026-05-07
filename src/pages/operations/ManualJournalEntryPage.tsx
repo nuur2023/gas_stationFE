@@ -117,6 +117,7 @@ export function ManualJournalEntryPage() {
   const [descEditOpen, setDescEditOpen] = useState(false)
   const [descEditEntry, setDescEditEntry] = useState<JournalEntry | null>(null)
   const [descEditText, setDescEditText] = useState('')
+  const [descEditDate, setDescEditDate] = useState(() => new Date().toISOString().slice(0, 10))
 
   const entryKindOptions: SelectOption[] = useMemo(
     () => [
@@ -304,6 +305,7 @@ export function ManualJournalEntryPage() {
   function openDescriptionEdit(row: JournalEntry) {
     setDescEditEntry(row)
     setDescEditText(row.description ?? '')
+    setDescEditDate((row.date ?? '').slice(0, 10) || new Date().toISOString().slice(0, 10))
     setDescEditOpen(true)
   }
 
@@ -312,16 +314,19 @@ export function ManualJournalEntryPage() {
     try {
       await patchJournalDescription({
         id: descEditEntry.id,
-        body: { description: descEditText },
+        body: {
+          description: descEditText,
+          date: `${descEditDate}T12:00:00.000Z`,
+        },
       }).unwrap()
-      showSuccess('Description updated.')
+      showSuccess('Journal header updated.')
       setDescEditOpen(false)
       setDescEditEntry(null)
     } catch (e) {
       const msg =
         typeof e === 'object' && e != null && 'data' in e && typeof (e as { data?: unknown }).data === 'string'
           ? (e as { data: string }).data
-          : 'Could not update description.'
+          : 'Could not update journal header.'
       showError(msg)
     }
   }
@@ -335,8 +340,8 @@ export function ManualJournalEntryPage() {
       businessId: showBizPicker ? (formBusinessId ?? undefined) : undefined,
       stationId: p.stationId,
       lines: [
-        { accountId: p.fromAccountId, debit: p.amount, credit: '0' },
-        { accountId: p.toAccountId, debit: '0', credit: p.amount },
+        { accountId: p.fromAccountId, debit: '0', credit: p.amount },
+        { accountId: p.toAccountId, debit: p.amount, credit: '0' },
       ],
     }
     await createJournal(body).unwrap()
@@ -372,7 +377,7 @@ export function ManualJournalEntryPage() {
             {routeCanUpdate ? (
               <button
                 type="button"
-                title="Edit description"
+                title="Edit journal header"
                 onClick={() => openDescriptionEdit(row)}
                 className="mr-1 inline-flex rounded p-1.5 text-slate-600 hover:bg-slate-100"
               >
@@ -440,12 +445,16 @@ export function ManualJournalEntryPage() {
           setDescEditOpen(false)
           setDescEditEntry(null)
         }}
-        title="Edit description"
+        title="Edit journal header"
         className="max-w-lg"
       >
         <p className="mb-2 text-sm text-slate-600">
-          Only the journal header description is changed. Lines and amounts are not modified.
+          Update the journal date and description. Lines and amounts are not modified.
         </p>
+        <div className="mb-3">
+          <label className="mb-1 block text-sm font-medium text-slate-700">Date</label>
+          <DateField value={descEditDate} onChange={setDescEditDate} />
+        </div>
         <label className="mb-1 block text-sm font-medium text-slate-700">Description</label>
         <textarea
           className="mb-4 min-h-[100px] w-full rounded-lg border border-slate-200 px-3 py-2"

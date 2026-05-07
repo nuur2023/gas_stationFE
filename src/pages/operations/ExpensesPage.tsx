@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   useCreateExpenseMutation,
   useDeleteExpenseMutation,
@@ -34,8 +35,23 @@ import {
 import type { Expense, ExpenseWriteRequest } from '../../types/models'
 
 type ExpenseFormTab = 'expense' | 'exchange'
+type ExpenseEntryKind = 'Expense' | 'Exchange' | 'cashOrUsdTaken'
+type ExpenseSideAction = 'Operation' | 'Management'
 
-export function ExpensesPage() {
+export function ExpensesPage({
+  expenseKind = 'Expense',
+  sideAction,
+}: {
+  expenseKind?: ExpenseEntryKind
+  sideAction?: ExpenseSideAction
+}) {
+  const location = useLocation()
+  const resolvedSideAction: ExpenseSideAction =
+    sideAction ?? (location.pathname.startsWith('/management/') ? 'Management' : 'Operation')
+  const isExchangePage = expenseKind === 'Exchange'
+  const isCashOrUsdTakenPage = expenseKind === 'cashOrUsdTaken'
+  const pageTitle = isExchangePage ? 'Exchange' : isCashOrUsdTakenPage ? 'Cash or USD Taken' : 'Expenses'
+  const addLabel = isExchangePage ? 'Add exchange' : isCashOrUsdTakenPage ? 'Add cash or USD taken' : 'Add expense'
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const isSuperAdmin = role === 'SuperAdmin'
@@ -52,6 +68,8 @@ export function ExpensesPage() {
     page,
     pageSize,
     q: debounced || undefined,
+    type: expenseKind,
+    sideAction: resolvedSideAction,
     ...(effectiveStationId != null && effectiveStationId > 0
       ? { filterStationId: effectiveStationId }
       : {}),
@@ -88,6 +106,8 @@ export function ExpensesPage() {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
   const [form, setForm] = useState<ExpenseWriteRequest>({
+    type: expenseKind,
+    sideAction: resolvedSideAction,
     description: '',
     currencyCode: 'USD',
     localAmount: '0',
@@ -99,7 +119,7 @@ export function ExpensesPage() {
   const [localAmountFocused, setLocalAmountFocused] = useState(false)
   const [rateFocused, setRateFocused] = useState(false)
   const [amountUsdFocused, setAmountUsdFocused] = useState(false)
-  const [formTab, setFormTab] = useState<ExpenseFormTab>('expense')
+  const [formTab, setFormTab] = useState<ExpenseFormTab>(isExchangePage ? 'exchange' : 'expense')
   const [recordDate, setRecordDate] = useState(() => new Date().toISOString().slice(0, 10))
   const expenseBusinessContextRef = useRef<number | null>(null)
   /** Exchange tab: user typed Amount USD; cleared when local amount or rate changes so auto-fill applies again. */
@@ -271,17 +291,14 @@ export function ExpensesPage() {
     const local = parseNumericInput(form.localAmount)
     const rate = parseNumericInput(form.rate)
     const usd = parseNumericInput(form.amountUsd)
-    return (
-      form.description.trim().length > 0 &&
-      form.currencyCode.trim().length === 3 &&
-      Number.isFinite(local) &&
-      local > 0 &&
-      Number.isFinite(rate) &&
-      rate > 0 &&
-      Number.isFinite(usd) &&
-      usd >= 0
-    )
-  }, [needsBusiness, needsWorkspaceStation, role, effectiveStationId, form.stationId, form.localAmount, form.rate, form.amountUsd, form.description])
+    if (!(form.description.trim().length > 0 && form.currencyCode.trim().length === 3 && Number.isFinite(local) && local > 0)) {
+      return false
+    }
+    if (formTab === 'exchange') {
+      return Number.isFinite(rate) && rate > 0 && Number.isFinite(usd) && usd >= 0
+    }
+    return true
+  }, [needsBusiness, needsWorkspaceStation, role, effectiveStationId, form.stationId, form.localAmount, form.rate, form.amountUsd, form.description, form.currencyCode, formTab])
 
   /** Re-apply auto USD when local or rate changes (Exchange tab manual override is dropped). */
   useEffect(() => {
@@ -312,7 +329,7 @@ export function ExpensesPage() {
 
   function openCreate() {
     setEditing(null)
-    setFormTab('expense')
+    setFormTab(isExchangePage ? 'exchange' : 'expense')
     exchangeUsdManualRef.current = false
     setLocalAmountFocused(false)
     setRateFocused(false)
@@ -325,6 +342,8 @@ export function ExpensesPage() {
         ? effectiveStationId
         : stationsForForm?.items[0]?.id ?? 0
     setForm({
+      type: expenseKind,
+      sideAction: resolvedSideAction,
       description: '',
       currencyCode: currencyOptionsForForm[0]?.value ?? 'USD',
       localAmount: '0',
@@ -338,7 +357,7 @@ export function ExpensesPage() {
 
   function openEdit(row: Expense) {
     setEditing(row)
-    setFormTab('exchange')
+    setFormTab(isExchangePage ? 'exchange' : 'expense')
     exchangeUsdManualRef.current = false
     setLocalAmountFocused(false)
     setRateFocused(false)
@@ -347,6 +366,8 @@ export function ExpensesPage() {
       setFormBusinessId(row.businessId)
     }
     setForm({
+      type: expenseKind,
+      sideAction: resolvedSideAction,
       description: row.description,
       currencyCode: (row.currencyCode ?? 'USD').toUpperCase(),
       localAmount: String(row.localAmount),
@@ -362,13 +383,16 @@ export function ExpensesPage() {
     e.preventDefault()
     if (!canSave) return
     const isUsdCurrency = form.currencyCode.trim().toUpperCase() === 'USD'
+    const isExchangeEntry = formTab === 'exchange'
     const body: ExpenseWriteRequest = {
       ...form,
+      type: expenseKind,
+      sideAction: resolvedSideAction,
       stationId: resolveFormStationId(role, form.stationId, effectiveStationId),
       localAmount: form.localAmount.replace(/,/g, ''),
       currencyCode: form.currencyCode.toUpperCase(),
-      rate: isUsdCurrency ? '0' : form.rate.replace(/,/g, ''),
-      amountUsd: isUsdCurrency ? '0' : form.amountUsd.replace(/,/g, ''),
+      rate: !isExchangeEntry || isUsdCurrency ? '0' : form.rate.replace(/,/g, ''),
+      amountUsd: !isExchangeEntry || isUsdCurrency ? '0' : form.amountUsd.replace(/,/g, ''),
       date: `${recordDate}T12:00:00.000Z`,
       ...(showBizPicker && formBusinessId != null ? { businessId: formBusinessId } : {}),
     }
@@ -485,8 +509,8 @@ export function ExpensesPage() {
     <>
       {deleteDialog}
       <DataTable<Expense>
-        title="Expenses"
-        addLabel="Add expense"
+        title={pageTitle}
+        addLabel={addLabel}
         rows={data?.items ?? []}
         totalCount={data?.totalCount ?? 0}
         page={page}
@@ -504,37 +528,15 @@ export function ExpensesPage() {
         onDeleteSelected={handleDeleteSelected}
         columns={tableColumns}
       />
-      <Modal open={open} title={editing ? 'Edit expense' : 'Add expense'} onClose={() => setOpen(false)} className="max-w-2xl">
+      <Modal open={open} title={editing ? `Edit ${pageTitle.toLowerCase()}` : addLabel} onClose={() => setOpen(false)} className="max-w-2xl">
         <form onSubmit={handleSave} className="space-y-3">
-          <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
-            <button
-              type="button"
-              onClick={() => setFormTab('expense')}
-              className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                formTab === 'expense'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Expense
-            </button>
-            <button
-              type="button"
-              onClick={() => setFormTab('exchange')}
-              className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                formTab === 'exchange'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Exchange
-            </button>
-          </div>
-          {formTab === 'expense' && (
+          {formTab === 'expense' && !isCashOrUsdTakenPage && (
             <p className="text-xs text-slate-500">
-              Local amount is converted using the active rate for this business. Switch to <span className="font-medium">Exchange</span>{' '}
-              to enter rate and USD manually.
+              Expense entries are saved as regular operating expense rows.
             </p>
+          )}
+          {isCashOrUsdTakenPage && (
+            <p className="text-xs text-slate-500">Cash or USD taken entries are tracked separately from regular expenses.</p>
           )}
           {showBizPicker && (
             <div>

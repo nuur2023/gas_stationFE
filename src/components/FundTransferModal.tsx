@@ -74,6 +74,11 @@ export function FundTransferModal({
     return null
   }, [fromAccountId, toAccountId, amount, accountById, showStationPicker, stationId])
 
+  function reverseAccounts() {
+    setFromAccountId(toAccountId)
+    setToAccountId(fromAccountId)
+  }
+
   async function handleSubmit() {
     if (error != null || fromAccountId == null || toAccountId == null) return
     const resolvedStation = showStationPicker
@@ -126,7 +131,7 @@ export function FundTransferModal({
           <div className="flex flex-col gap-4 sm:grid sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end sm:gap-3">
             <div className="min-w-0">
               <label className="mb-1 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                From account <span className="text-rose-500">*</span>
+                From account (credit) <span className="text-rose-500">*</span>
               </label>
               <FormSelect
                 options={accountOptions}
@@ -136,13 +141,19 @@ export function FundTransferModal({
               />
             </div>
             <div className="flex justify-center py-1 sm:pb-2">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-md sm:h-10 sm:w-10">
+              <button
+                type="button"
+                onClick={reverseAccounts}
+                title="Reverse from/to accounts"
+                aria-label="Reverse from and to accounts"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-md transition-colors hover:bg-emerald-700 sm:h-10 sm:w-10"
+              >
                 <ArrowLeftRight className="h-5 w-5 rotate-90 sm:rotate-0" aria-hidden />
-              </div>
+              </button>
             </div>
             <div className="min-w-0">
               <label className="mb-1 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                To account <span className="text-rose-500">*</span>
+                To account (debit) <span className="text-rose-500">*</span>
               </label>
               <FormSelect
                 options={accountOptions}

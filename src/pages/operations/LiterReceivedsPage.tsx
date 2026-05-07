@@ -12,6 +12,7 @@ import {
 import { useAppSelector } from "../../app/hooks";
 import { DataTable, type Column } from "../../components/DataTable";
 import { DateField } from "../../components/DateField";
+import { DeleteConfirmDialog } from "../../components/DeleteConfirmDialog";
 import { FormSelect, type SelectOption } from "../../components/FormSelect";
 import { Modal } from "../../components/Modal";
 import { useDeleteConfirm } from "../../hooks/useDeleteConfirm";
@@ -58,6 +59,12 @@ function getApiErrorMessage(error: unknown): string {
     if (typeof msg === "string" && msg.trim()) return msg;
   }
   return "Request failed. Please try again.";
+}
+
+function isNegativeDippingError(error: unknown): boolean {
+  return getApiErrorMessage(error)
+    .toLowerCase()
+    .includes("dipping balance cannot go negative");
 }
 
 export function LiterReceivedsPage() {
@@ -231,6 +238,38 @@ export function LiterReceivedsPage() {
   const [recordDate, setRecordDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
+  const [clampConfirmIds, setClampConfirmIds] = useState<number[]>([]);
+  const [clampConfirmLoading, setClampConfirmLoading] = useState(false);
+
+  const closeClampConfirm = () => {
+    if (clampConfirmLoading) return;
+    setClampConfirmIds([]);
+  };
+
+  const handleClampConfirm = async () => {
+    if (clampConfirmIds.length === 0) return;
+    setClampConfirmLoading(true);
+    try {
+      for (const id of clampConfirmIds) {
+        await deleteLiterReceived({ id, clampDippingToZero: true }).unwrap();
+      }
+      setSelected((prev) => {
+        const n = new Set(prev);
+        for (const id of clampConfirmIds) n.delete(id);
+        return n;
+      });
+      showSuccess(
+        clampConfirmIds.length > 1
+          ? "Selected records deleted. Negative dipping values were reset to 0."
+          : "Record deleted and dipping reset to 0.",
+      );
+      setClampConfirmIds([]);
+    } catch (error) {
+      showError(getApiErrorMessage(error));
+    } finally {
+      setClampConfirmLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (
@@ -514,12 +553,17 @@ export function LiterReceivedsPage() {
       description:
         "This liter received entry will be removed and dipping will be adjusted.",
       action: async () => {
-        await deleteLiterReceived(id).unwrap();
-        setSelected((prev) => {
-          const n = new Set(prev);
-          n.delete(id);
-          return n;
-        });
+        try {
+          await deleteLiterReceived({ id }).unwrap();
+          setSelected((prev) => {
+            const n = new Set(prev);
+            n.delete(id);
+            return n;
+          });
+        } catch (error) {
+          if (!isNegativeDippingError(error)) throw error;
+          setClampConfirmIds([id]);
+        }
       },
     });
   }
@@ -530,8 +574,21 @@ export function LiterReceivedsPage() {
       title: `Delete ${ids.length} row(s)?`,
       description: "Selected records will be removed and dipping adjusted.",
       action: async () => {
+        const failedNegativeIds: number[] = [];
         for (const id of ids) {
-          await deleteLiterReceived(id).unwrap();
+          try {
+            await deleteLiterReceived({ id }).unwrap();
+          } catch (error) {
+            if (isNegativeDippingError(error)) {
+              failedNegativeIds.push(id);
+              continue;
+            }
+            throw error;
+          }
+        }
+        if (failedNegativeIds.length > 0) {
+          setClampConfirmIds(failedNegativeIds);
+          return;
         }
         setSelected(new Set());
       },
@@ -616,6 +673,27 @@ export function LiterReceivedsPage() {
   return (
     <>
       {deleteDialog}
+      <DeleteConfirmDialog
+        open={clampConfirmIds.length > 0}
+        title={
+          clampConfirmIds.length > 1
+            ? "Some rows would make dipping negative"
+            : "Dipping will become negative"
+        }
+        description={
+          clampConfirmIds.length > 1
+            ? `${clampConfirmIds.length} row(s) require reset-to-0. Confirm to continue deleting those rows with dipping clamped to 0.`
+            : "If you continue, dipping balance will be reset to 0 instead of going negative. Do you want to continue?"
+        }
+        confirmLabel={
+          clampConfirmIds.length > 1 ? "Yes, continue" : "Yes, reset to 0"
+        }
+        cancelLabel="Cancel"
+        variant="danger"
+        loading={clampConfirmLoading}
+        onCancel={closeClampConfirm}
+        onConfirm={handleClampConfirm}
+      />
       <DataTable<LiterReceived>
         title="Liter received"
         addLabel="Add record"

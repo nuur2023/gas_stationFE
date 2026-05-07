@@ -13,6 +13,7 @@ import { useAppSelector } from '../../app/hooks'
 import { DataTable, type Column } from '../../components/DataTable'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
+import { useToast } from '../../components/ToastProvider'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
 import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import { showBusinessPickerInForms } from '../../lib/stationContext'
@@ -91,6 +92,7 @@ export function AccountingPeriodsPage() {
   const [reopenConfirmRow, setReopenConfirmRow] = useState<PeriodRow | null>(null)
   const [reopenError, setReopenError] = useState<string | null>(null)
   const [periodHint, setPeriodHint] = useState<string | null>(null)
+  const { showError, showSuccess } = useToast()
 
   const { data: businesses } = useGetBusinessesQuery({ page: 1, pageSize: 500, q: undefined })
   const businessOptions: SelectOption[] = useMemo(() => {
@@ -117,17 +119,22 @@ export function AccountingPeriodsPage() {
 
   async function savePeriod() {
     if (formError != null || effectiveBusinessId <= 0) return
-    await createPeriod({
-      businessId: effectiveBusinessId,
-      name: name.trim(),
-      periodStart: `${periodStart}T12:00:00.000Z`,
-      periodEnd: `${periodEnd}T12:00:00.000Z`,
-    }).unwrap()
-    setOpen(false)
-    setName('')
-    setPeriodStart(new Date().toISOString().slice(0, 10))
-    setPeriodEnd(new Date().toISOString().slice(0, 10))
-    void refetch()
+    try {
+      await createPeriod({
+        businessId: effectiveBusinessId,
+        name: name.trim(),
+        periodStart: `${periodStart}T12:00:00.000Z`,
+        periodEnd: `${periodEnd}T12:00:00.000Z`,
+      }).unwrap()
+      setOpen(false)
+      setName('')
+      setPeriodStart(new Date().toISOString().slice(0, 10))
+      setPeriodEnd(new Date().toISOString().slice(0, 10))
+      showSuccess('Accounting period created.')
+      void refetch()
+    } catch (e) {
+      showError(mutationErrorMessage(e))
+    }
   }
 
   function openEdit(row: PeriodRow) {
@@ -145,17 +152,22 @@ export function AccountingPeriodsPage() {
 
   async function saveEdit() {
     if (editFormError != null || !editingRow) return
-    await updatePeriod({
-      id: editingRow.id,
-      body: {
-        name: editName.trim(),
-        periodStart: `${editPeriodStart}T12:00:00.000Z`,
-        periodEnd: `${editPeriodEnd}T12:00:00.000Z`,
-      },
-    }).unwrap()
-    setEditOpen(false)
-    setEditingRow(null)
-    void refetch()
+    try {
+      await updatePeriod({
+        id: editingRow.id,
+        body: {
+          name: editName.trim(),
+          periodStart: `${editPeriodStart}T12:00:00.000Z`,
+          periodEnd: `${editPeriodEnd}T12:00:00.000Z`,
+        },
+      }).unwrap()
+      setEditOpen(false)
+      setEditingRow(null)
+      showSuccess('Accounting period updated.')
+      void refetch()
+    } catch (e) {
+      showError(mutationErrorMessage(e))
+    }
   }
 
   function handleDeleteOne(id: number) {

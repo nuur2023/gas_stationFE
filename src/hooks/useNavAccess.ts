@@ -44,6 +44,15 @@ function hasFinancialPermissionForDailyCashFlow(set: Set<string>): boolean {
   return false
 }
 
+/** Report period view: explicit permission, or any other financial report (new or legacy). */
+function hasFinancialPermissionForPeriodView(set: Set<string>): boolean {
+  if (set.has('/financial-reports/report-period-view')) return true
+  if (set.has('/reports/financial?kind=period-view')) return true
+  if (setHasAnyRoute(set, FINANCIAL_REPORT_CORE_PATHS)) return true
+  if (setHasAnyRoute(set, FINANCIAL_REPORT_LEGACY_CORE_ROUTES)) return true
+  return false
+}
+
 /** User can open `pathname` if they have the new path permission or the legacy ?kind= row. */
 function financialPathAllowedByModernOrLegacy(
   pathname: string,
@@ -104,9 +113,12 @@ function legacyFinancialQueryAllowed(pathname: string, search: string, set: Set<
                 ? '/financial-reports/supplier-balances'
                 : kind === 'daily-cash-flow'
                   ? '/financial-reports/daily-cash-flow'
+                  : kind === 'period-view'
+                    ? '/financial-reports/report-period-view'
                   : null
   if (modernPath && set.has(modernPath)) return true
   if (kind === 'daily-cash-flow') return hasFinancialPermissionForDailyCashFlow(set)
+  if (kind === 'period-view') return hasFinancialPermissionForPeriodView(set)
   return false
 }
 
@@ -188,6 +200,9 @@ export function useNavAccess() {
         if (pathname === '/financial-reports/daily-cash-flow') {
           return hasFinancialPermissionForDailyCashFlow(set)
         }
+        if (pathname === '/financial-reports/report-period-view') {
+          return hasFinancialPermissionForPeriodView(set)
+        }
       }
       if (inventoryTransferAliasAllowed(pathname, search, set)) return true
       if (legacyFinancialQueryAllowed(pathname, search, set)) return true
@@ -211,6 +226,9 @@ export function useNavAccess() {
         if (financialLinkAllowedByModernOrLegacy(pathname, search, set)) return true
         if (pathname === '/financial-reports/daily-cash-flow') {
           return hasFinancialPermissionForDailyCashFlow(set)
+        }
+        if (pathname === '/financial-reports/report-period-view') {
+          return hasFinancialPermissionForPeriodView(set)
         }
       }
       if (inventoryTransferAliasAllowed(pathname, search, set)) return true

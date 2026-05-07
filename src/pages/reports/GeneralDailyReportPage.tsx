@@ -608,18 +608,18 @@ export function GeneralDailyReportPage() {
           `$${formatDecimal(dailySummary.salesUsd)}`,
         ],
         [
-          `Total Sales (${localCurrencyCode})`,
+          `Total Current Amount (${localCurrencyCode})`,
           { content: formatDecimal(dailySummary.salesLocal), colSpan: 2, styles: { halign: 'left' } },
           '—',
           '—',
           `$${formatDecimal(dailySummary.salesSspToUsd)}`,
           `$${formatDecimal(dailySummary.salesUsd)}`,
         ],
-        [{ content: 'Cash Out', colSpan: 7, styles: { fontStyle: 'bold', halign: 'left' } }],
-        ['Description', 'Currency', 'Amount', 'Rate', 'USD', '', ''],
+        [{ content: 'Cash Out', colSpan: 7, styles: { fontStyle: 'bold', halign: 'left', backgroundColor: [241, 245, 249] } }],
+        ['Description', 'Currency', 'Amount', 'Rate', 'USD', '', '',],
       ]
       if (dailySummaryCashOutLines.length === 0) {
-        summaryBody.push([{ content: 'No cash out rows.', colSpan: 7, styles: { halign: 'center', textColor: [100, 116, 139] } }])
+        summaryBody.push([{ content: 'No cash out rows.', colSpan: 7, styles: { halign: 'center', textColor: [100, 116, 139], } }])
       } else {
         for (const r of dailySummaryCashOutLines) {
           const code = (r.currencyCode || 'USD').toUpperCase()
@@ -655,7 +655,7 @@ export function GeneralDailyReportPage() {
         'Total Cash Out',
         { content: formatDecimal(dailySummary.outLocal), colSpan: 3, styles: { halign: 'right' } },
         'Total Dollar Out',
-        { content: `$${formatDecimal(dailySummary.outUsd)}`, colSpan: 2, styles: { halign: 'right' } },
+        { content: `$${formatDecimal(dailySummary.outUsd)}`, colSpan: 2, styles: { halign: 'right', backgroundColor: [241, 245, 249] } },
       ])
       summaryBody.push([
         'Total Cash Balance',
@@ -669,7 +669,9 @@ export function GeneralDailyReportPage() {
         body: summaryBody as never[],
         showHead: 'never',
         showFoot: 'never',
-        styles: { fontSize: 8, cellPadding: 3, textColor: [31, 41, 55] },
+        // make header background color gray
+        headStyles: { fillColor: [229, 231, 235], textColor: [31, 41, 55], fontStyle: 'bold' },
+        styles: { fontSize: 8, cellPadding: 3, textColor: [31, 41, 55],  },
         bodyStyles: { fontStyle: 'normal' },
         theme: 'grid',
         margin: { left: margin, right: margin, bottom: 60 },
@@ -878,7 +880,7 @@ export function GeneralDailyReportPage() {
           </label>
         </div>
         <div className="overflow-x-auto overscroll-x-contain">
-        <table className="min-w-[1180px] w-max divide-y divide-slate-200 text-sm">
+        <table className="w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-2 text-left font-semibold text-slate-700">Date</th>
@@ -997,7 +999,8 @@ export function GeneralDailyReportPage() {
             </label>
           </div>
           <div className="overflow-x-auto overscroll-x-contain">
-          <table className="w-full border-collapse text-sm">
+            {/* make cells of the table not to get wrapped to next line so auto-fit the table width */}
+          <table className="w-full border-collapse text-sm table-fixed min-[1200px]:min-w-[2000px]">
             <tbody>
               <tr className="bg-white">
                 <th className="border border-slate-300 px-4 py-2 text-left text-base font-medium text-slate-900">
@@ -1019,7 +1022,7 @@ export function GeneralDailyReportPage() {
                   SSP to USD
                 </td>
                 <td className="border border-slate-300 px-4 py-2 text-center text-base font-medium text-slate-900">
-                  Liter Sold (USD)
+                  Liters Sold by (USD)
                 </td>
               </tr>
               <tr className="font-medium">
@@ -1036,7 +1039,7 @@ export function GeneralDailyReportPage() {
                 </td>
               </tr>
               <tr className="font-medium">
-                <td className="border border-slate-300 px-4 py-2 text-base text-slate-900">Total Sales ({localCurrencyCode})</td>
+                <td className="border border-slate-300 px-4 py-2 text-base text-slate-900">Total Current Amount ({localCurrencyCode})</td>
                 <td colSpan={2} className="border border-slate-300 px-4 py-2 text-left text-2xl tabular-nums text-slate-900">
                   {formatDecimal(dailySummary.salesLocal)}
                 </td>
@@ -1054,7 +1057,7 @@ export function GeneralDailyReportPage() {
                   Cash Out
                 </td>
               </tr>
-              <tr className="bg-white">
+              <tr className="bg-gray-100">
                 <th className="border border-slate-300 px-4 py-2 text-left text-base font-medium text-slate-900">Description</th>
                 <th className="border border-slate-300 px-4 py-2 text-center text-base font-medium text-slate-900">Currency</th>
                 <th className="border border-slate-300 px-4 py-2 text-center text-base font-medium text-slate-900">Amount</th>
@@ -1208,7 +1211,7 @@ export function GeneralDailyReportPage() {
           </label>
         </div>
         <div className="max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
-        <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
+        <table className="w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-2 text-left font-semibold text-slate-700">Type fuel</th>
@@ -1252,7 +1255,7 @@ export function GeneralDailyReportPage() {
           </label>
         </div>
         <div className="max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
-        <table className="min-w-[980px] divide-y divide-slate-200 text-sm">
+        <table className="w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-2 text-left font-semibold text-slate-700">Date</th>
@@ -1317,7 +1320,7 @@ export function GeneralDailyReportPage() {
           </label>
         </div>
         <div className="max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
-        <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
+        <table className="w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-2 text-left font-semibold text-slate-700">Date</th>
@@ -1373,7 +1376,7 @@ export function GeneralDailyReportPage() {
           </label>
         </div>
         <div className="max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
-        <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
+        <table className="w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-2 text-left font-semibold text-slate-700">Name</th>

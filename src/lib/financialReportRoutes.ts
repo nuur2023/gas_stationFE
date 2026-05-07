@@ -33,6 +33,7 @@ export const FINANCIAL_REPORT_PATH_TO_LEGACY: Readonly<Record<string, string>> =
   '/financial-reports/customer-balances': '/reports/financial?kind=customer',
   '/financial-reports/supplier-balances': '/reports/financial?kind=supplier',
   '/financial-reports/daily-cash-flow': '/reports/financial?kind=daily-cash-flow',
+  '/financial-reports/report-period-view': '/reports/financial?kind=period-view',
 }
 
 /** Paths (except cash flow statement) used to infer “has some financial report” access. */
@@ -70,4 +71,5 @@ export const LEGACY_FINANCIAL_KIND_TO_PATH: Readonly<Record<string, string>> = {
   customer: '/financial-reports/customer-balances',
   supplier: '/financial-reports/supplier-balances',
   'daily-cash-flow': '/financial-reports/daily-cash-flow',
+  'period-view': '/financial-reports/report-period-view',
 }

@@ -53,6 +53,8 @@ const OPERATIONS_CHILDREN: FlyoutItem[] = [
   { to: '/customer-fuel-givens', label: 'Customers', icon: UserRoundPlus },
   { to: '/liter-received', label: 'Liter Received', icon: Truck },
   { to: '/expenses', label: 'Expenses', icon: Wallet },
+  { to: '/operations/cash-usd-taken', label: 'Cash or USD Taken', icon: Wallet },
+  { to: '/operations/exchange', label: 'Exchange', icon: ArrowRightLeft },
   { to: '/generator-usage', label: 'Generators', icon: Zap },
   { to: '/accounting/customer-payments', label: 'Payments', icon: CreditCard },
 ]
@@ -64,6 +66,8 @@ const MANAGEMENT_CHILDREN: FlyoutItem[] = [
   { to: '/transfer-audit-trail', label: 'Transfer audit trail', icon: ClipboardList },
   { to: '/setup/fuel-prices', label: 'Pricing', icon: Droplets },
   { to: '/rates', label: 'Rates', icon: Percent },
+  { to: '/management/expenses', label: 'Expenses', icon: Wallet },
+  { to: '/management/exchange', label: 'Exchange', icon: ArrowRightLeft },
   { to: '/dipping', label: 'Tank (Dipping)', icon: Beaker },
   { to: '/pumps', label: 'Pumps', icon: Fuel },
   { to: '/nozzles', label: 'Nozzles', icon: Link2 },
@@ -98,16 +102,21 @@ const FINANCIAL_REPORTS_CHILDREN: FlyoutItem[] = [
   { to: '/financial-reports/customer-balances', label: 'Customer balances', icon: FileText },
   { to: '/financial-reports/supplier-balances', label: 'Supplier balances', icon: FileText },
   { to: '/financial-reports/daily-cash-flow', label: 'Cash flow statement', icon: FileText },
+  { to: '/financial-reports/report-period-view', label: 'Report Period View', icon: FileText },
 ]
 
 const REPORTS_CHILDREN: FlyoutItem[] = [
   { to: '/reports/liter-received', label: 'Liter received', icon: FileText },
   { to: '/reports/daily-cash-sales', label: 'Daily cash sales report', icon: FileText },
   { to: '/reports/cash-out-daily', label: 'Cash out daily', icon: FileText },
+  { to: '/reports/expenses', label: 'Expense reports', icon: FileText },
+  { to: '/reports/exchange', label: 'Exchange reports', icon: FileText },
+  { to: '/reports/cash-usd-taken', label: 'Cash or USD Taken reports', icon: FileText },
   { to: '/reports/daily-fuel-given', label: 'Daily given fuel', icon: FileText },
   { to: '/reports/generator-usage', label: 'Generator usage report', icon: FileText },
   { to: '/reports/general-daily', label: 'General daily report', icon: FileText },
   { to: '/reports/inventory-daily', label: 'Inventory daily', icon: FileText },
+  { to: '/reports/daily-station', label: 'Daily station report', icon: FileText },
   { to: '/reports/outstanding-customers', label: 'Outstanding customers', icon: AlertCircle },
 ]
 

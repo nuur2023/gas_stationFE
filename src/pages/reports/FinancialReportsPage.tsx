@@ -12,6 +12,7 @@ import {
   useGetCustomerBalancesReportQuery,
   useGetGeneralLedgerReportQuery,
   useGetProfitLossReportQuery,
+  useGetReportPeriodViewQuery,
   useGetStationsQuery,
   useGetSupplierBalancesReportQuery,
   useGetTrialBalanceReportQuery,
@@ -37,7 +38,16 @@ import { BalanceSheetReportView } from './BalanceSheetReportView'
 import { CapitalStatementReportView } from './CapitalStatementReportView'
 import { ProfitLossReportView } from './ProfitLossReportView'
 
-type ReportKind = 'trial' | 'ledger' | 'pl' | 'bs' | 'capital' | 'customer' | 'supplier' | 'daily-cash-flow'
+type ReportKind =
+  | 'trial'
+  | 'ledger'
+  | 'pl'
+  | 'bs'
+  | 'capital'
+  | 'customer'
+  | 'supplier'
+  | 'daily-cash-flow'
+  | 'period-view'
 
 const REPORT_KINDS: ReportKind[] = [
   'trial',
@@ -48,6 +58,7 @@ const REPORT_KINDS: ReportKind[] = [
   'customer',
   'supplier',
   'daily-cash-flow',
+  'period-view',
 ]
 
 function parseKindParam(v: string | null): ReportKind | null {
@@ -135,6 +146,8 @@ function reportKindFromPathname(pathname: string): ReportKind | null {
       return 'supplier'
     case '/financial-reports/daily-cash-flow':
       return 'daily-cash-flow'
+    case '/financial-reports/report-period-view':
+      return 'period-view'
     default:
       return null
   }
@@ -221,6 +234,14 @@ function buildSimpleReportPdf(
   openPdfInNewTab(doc)
 }
 
+function addPdfSectionTitle(doc: jsPDF, title: string, y: number, margin: number): number {
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.setTextColor(31, 41, 55)
+  doc.text(title, margin, y)
+  return y + 10
+}
+
 interface TrialBalanceRow {
   id: number
   code: string
@@ -273,6 +294,10 @@ export function FinancialReportsPage() {
 
   const [from, setFrom] = useState(defaultReportDate)
   const [to, setTo] = useState(defaultReportDate)
+  const [periodViewClosedPeriod, setPeriodViewClosedPeriod] = useState<string | null>(null)
+  const [periodIncludeIncome, setPeriodIncludeIncome] = useState(true)
+  const [periodIncludeBalanceSheet, setPeriodIncludeBalanceSheet] = useState(true)
+  const [periodIncludeCashFlow, setPeriodIncludeCashFlow] = useState(true)
   const [bsAsOf, setBsAsOf] = useState('')
   const [trialBusinessId, setTrialBusinessId] = useState<number | null>(null)
   const [trialStationId, setTrialStationId] = useState<number | null>(null)
@@ -287,7 +312,8 @@ export function FinancialReportsPage() {
       kind !== 'bs' &&
       kind !== 'capital' &&
       kind !== 'ledger' &&
-      kind !== 'daily-cash-flow'
+      kind !== 'daily-cash-flow' &&
+      kind !== 'period-view'
     )
       return null
     return parseFinancialEntryViewParam(searchParams.get('view')) ?? 'adjusted'
@@ -370,14 +396,15 @@ export function FinancialReportsPage() {
     {
       skip:
         !isSuperAdmin ||
-        (kind !== 'trial' &&
+      (kind !== 'trial' &&
           kind !== 'pl' &&
           kind !== 'ledger' &&
           kind !== 'bs' &&
           kind !== 'capital' &&
           kind !== 'customer' &&
           kind !== 'supplier' &&
-          kind !== 'daily-cash-flow'),
+          kind !== 'daily-cash-flow' &&
+          kind !== 'period-view'),
     },
   )
   const { data: trialStations } = useGetStationsQuery(
@@ -386,10 +413,12 @@ export function FinancialReportsPage() {
   )
 
   const plStationsBusinessId =
-    kind === 'pl' || kind === 'capital' ? (isSuperAdmin ? (plBusinessId ?? 0) : authBusinessId) : 0
+    kind === 'pl' || kind === 'capital' || kind === 'period-view'
+      ? (isSuperAdmin ? (plBusinessId ?? 0) : authBusinessId)
+      : 0
   const { data: plStations } = useGetStationsQuery(
     { page: 1, pageSize: 500, businessId: plStationsBusinessId || undefined },
-    { skip: (kind !== 'pl' && kind !== 'capital') || plStationsBusinessId <= 0 },
+    { skip: (kind !== 'pl' && kind !== 'capital' && kind !== 'period-view') || plStationsBusinessId <= 0 },
   )
   const ledgerStationsBusinessId =
     kind === 'ledger' || kind === 'daily-cash-flow' ? (isSuperAdmin ? (ledgerBusinessId ?? 0) : authBusinessId) : 0
@@ -426,7 +455,7 @@ export function FinancialReportsPage() {
   }, [isSuperAdmin, kind, businesses?.items])
 
   useEffect(() => {
-    if (!isSuperAdmin || (kind !== 'pl' && kind !== 'capital')) return
+    if (!isSuperAdmin || (kind !== 'pl' && kind !== 'capital' && kind !== 'period-view')) return
     const items = businesses?.items ?? []
     if (items.length === 0) return
     setPlBusinessId((prev) => {
@@ -496,18 +525,19 @@ export function FinancialReportsPage() {
     const prev = prevFinancialReportKindRef.current
     prevFinancialReportKindRef.current = kind
     if (
-      (kind === 'trial' || kind === 'pl' || kind === 'capital') &&
+      (kind === 'trial' || kind === 'pl' || kind === 'capital' || kind === 'period-view') &&
       prev != null &&
       prev !== 'trial' &&
       prev !== 'pl' &&
-      prev !== 'capital'
+      prev !== 'capital' &&
+      prev !== 'period-view'
     ) {
       periodDateAutoKeyRef.current = ''
     }
   }, [kind])
 
   useEffect(() => {
-    if (kind !== 'trial' && kind !== 'pl' && kind !== 'capital') return
+    if (kind !== 'trial' && kind !== 'pl' && kind !== 'capital' && kind !== 'period-view') return
     const bid = kind === 'trial' ? effectiveBusinessId : effectivePlBusinessId
     if (bid <= 0) return
     const periods = (
@@ -534,8 +564,38 @@ export function FinancialReportsPage() {
     setFrom(range.from)
     setTo(range.to)
   }, [kind, effectiveBusinessId, effectivePlBusinessId, accountingPeriodsTrial, accountingPeriodsPl])
+
+  const periodViewClosedPeriods = useMemo(() => {
+    return (accountingPeriodsPl as PeriodRowLite[])
+      .filter((p) => p.status === 1)
+      .sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))
+      .map((p) => ({
+        key: `${p.periodStart.slice(0, 10)}:${p.periodEnd.slice(0, 10)}`,
+        from: p.periodStart.slice(0, 10),
+        to: p.periodEnd.slice(0, 10),
+      }))
+  }, [accountingPeriodsPl])
+
+  useEffect(() => {
+    if (kind !== 'period-view') return
+    if (periodViewClosedPeriods.length === 0) return
+    setPeriodViewClosedPeriod((prev) => {
+      if (prev && periodViewClosedPeriods.some((p) => p.key === prev)) return prev
+      return periodViewClosedPeriods[0].key
+    })
+  }, [kind, periodViewClosedPeriods])
+
+  useEffect(() => {
+    if (kind !== 'period-view') return
+    if (!periodViewClosedPeriod) return
+    const picked = periodViewClosedPeriods.find((p) => p.key === periodViewClosedPeriod)
+    if (!picked) return
+    setFrom(picked.from)
+    setTo(picked.to)
+  }, [kind, periodViewClosedPeriod, periodViewClosedPeriods])
   const effectiveLedgerBusinessId = isSuperAdmin ? (ledgerBusinessId ?? 0) : authBusinessId
-  const effectiveBsBusinessId = isSuperAdmin ? (bsBusinessId ?? 0) : authBusinessId
+  const effectiveBsBusinessId =
+    kind === 'period-view' ? effectivePlBusinessId : isSuperAdmin ? (bsBusinessId ?? 0) : authBusinessId
   const effectiveCustomerBusinessId = isSuperAdmin ? (customerBusinessId ?? 0) : authBusinessId
   const effectiveSupplierBusinessId = isSuperAdmin ? (supplierBusinessId ?? 0) : authBusinessId
   const { data: ledgerAccounts } = useGetAccountsQuery(
@@ -607,6 +667,16 @@ export function FinancialReportsPage() {
       trialBalanceMode: effectiveReportTrialBalanceMode,
     },
     { skip: kind !== 'bs' || effectiveBsBusinessId <= 0 || needsReportStation },
+  )
+  const periodView = useGetReportPeriodViewQuery(
+    {
+      businessId: effectivePlBusinessId,
+      from: from || undefined,
+      to: to || undefined,
+      stationId: reportStationId(plStationId),
+      trialBalanceMode: effectiveReportTrialBalanceMode,
+    },
+    { skip: kind !== 'period-view' || effectivePlBusinessId <= 0 || needsReportStation },
   )
   const customer = useGetCustomerBalancesReportQuery(
     {
@@ -760,6 +830,16 @@ export function FinancialReportsPage() {
 
   const plPeriodLabel = formatReportPeriod(from, to)
   const bsPeriodLabel = formatReportPeriod('', bsAsOf)
+  const periodViewCashFlowRows = useMemo(() => {
+    const incomeTotal = Number(periodView.data?.cashFlowStatement?.cashReceivedFromFuelSales ?? 0)
+    const expenseTotal = Number(periodView.data?.cashFlowStatement?.cashPaidForExpense ?? 0)
+    const netOperating = Number(periodView.data?.cashFlowStatement?.netCashFromOperating ?? incomeTotal - expenseTotal)
+    return {
+      incomeTotal,
+      expenseTotal,
+      netOperating,
+    }
+  }, [periodView.data])
   const ledgerRows = useMemo(() => {
     let running = 0
     const rows = (ledger.data ?? []).map((r: any, i: number) => {
@@ -1129,6 +1209,145 @@ export function FinancialReportsPage() {
     )
   }
 
+  const handlePeriodViewExport = () => {
+    if (!periodIncludeIncome && !periodIncludeBalanceSheet && !periodIncludeCashFlow) return
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+    const margin = 40
+    const pageW = doc.internal.pageSize.getWidth()
+    const pageH = doc.internal.pageSize.getHeight()
+    const addFooter = () => {
+      const pageCount = doc.getNumberOfPages()
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9)
+        doc.setTextColor(100, 116, 139)
+        doc.text(`Page ${i}`, pageW - margin, pageH - 16, { align: 'right' })
+      }
+    }
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(20)
+    doc.setTextColor(15, 23, 42)
+    doc.text('Financial Report', margin, 46)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(71, 85, 105)
+    doc.text(formatReportPeriod(from, to), margin, 62)
+
+    let y = 82
+    const bottomSafeY = pageH - 60
+    const ensureSpace = (estimatedHeight: number) => {
+      if (y + estimatedHeight <= bottomSafeY) return
+      doc.addPage()
+      y = 62
+    }
+
+    if (periodIncludeIncome && periodView.data) {
+      const incomeRows = periodView.data.incomeStatement?.incomeAccounts ?? []
+      const cogsRows = periodView.data.incomeStatement?.cogsAccounts ?? []
+      const expenseRows = periodView.data.incomeStatement?.expenseAccounts ?? []
+      const estimatedRows = incomeRows.length + cogsRows.length + expenseRows.length + 10
+      ensureSpace(Math.max(170, estimatedRows * 18))
+      y = addPdfSectionTitle(doc, 'Income Statement', y, margin)
+      const incomeBody: Array<Array<string | number>> = []
+      incomeBody.push(['Income', ''])
+      for (const row of incomeRows) {
+        incomeBody.push([`${row.code} - ${row.name}`, formatDecimal(row.amount)])
+      }
+      incomeBody.push(['Sales Total', formatDecimal(periodView.data.incomeStatement?.sales ?? 0)])
+      incomeBody.push(['COGS', ''])
+      for (const row of cogsRows) {
+        incomeBody.push([`${row.code} - ${row.name}`, formatDecimal(row.amount)])
+      }
+      incomeBody.push(['COGS Total', formatDecimal(periodView.data.incomeStatement?.cogs ?? 0)])
+      incomeBody.push(['Gross Profit', formatDecimal(periodView.data.incomeStatement?.grossProfit ?? 0)])
+      incomeBody.push(['Expense', ''])
+      for (const row of expenseRows) {
+        incomeBody.push([`${row.code} - ${row.name}`, formatDecimal(row.amount)])
+      }
+      incomeBody.push(['Total Expense', formatDecimal(periodView.data.incomeStatement?.totalExpense ?? 0)])
+      incomeBody.push(['Net Income', formatDecimal(periodView.data.incomeStatement?.netIncome ?? 0)])
+      autoTable(doc, {
+        startY: y,
+        head: [['Description', 'Amount ($)']],
+        body: incomeBody,
+        styles: { fontSize: 9, cellPadding: 4, textColor: [31, 41, 55] },
+        headStyles: { fillColor: [226, 232, 240], textColor: [15, 23, 42], fontStyle: 'bold' },
+        theme: 'grid',
+        margin: { left: margin, right: margin },
+      })
+      y = ((doc as any).lastAutoTable?.finalY ?? y) + 20
+    }
+
+    if (periodIncludeBalanceSheet && periodView.data) {
+      const assetRows = periodView.data.balanceSheet?.assets ?? []
+      const liabilityRows = periodView.data.balanceSheet?.liabilities ?? []
+      const equityRows = periodView.data.balanceSheet?.equity ?? []
+      const estimatedRows = assetRows.length + liabilityRows.length + equityRows.length + 8
+      ensureSpace(Math.max(200, estimatedRows * 18))
+      y = addPdfSectionTitle(doc, 'Balance Sheet', y, margin)
+      const balanceSheetBody: Array<Array<string | number>> = []
+      balanceSheetBody.push(['Assets', ''])
+      for (const row of assetRows) {
+        balanceSheetBody.push([`${row.code} - ${row.name}`, formatDecimal(row.balance)])
+      }
+      balanceSheetBody.push(['Total Asset', formatDecimal(periodView.data.balanceSheet?.totalAsset ?? 0)])
+      balanceSheetBody.push(['Liabilities', ''])
+      for (const row of liabilityRows) {
+        balanceSheetBody.push([`${row.code} - ${row.name}`, formatDecimal(row.balance)])
+      }
+      balanceSheetBody.push(['Equity', ''])
+      for (const row of equityRows) {
+        balanceSheetBody.push([`${row.code} - ${row.name}`, formatDecimal(row.balance)])
+      }
+      balanceSheetBody.push(['Net Income', formatDecimal(periodView.data.balanceSheet?.netIncome ?? 0)])
+      balanceSheetBody.push(['Total Equity', formatDecimal(periodView.data.balanceSheet?.totalEquity ?? 0)])
+      autoTable(doc, {
+        startY: y,
+        head: [['Description', 'Amount ($)']],
+        body: balanceSheetBody,
+        styles: { fontSize: 9, cellPadding: 4, textColor: [31, 41, 55] },
+        headStyles: { fillColor: [226, 232, 240], textColor: [15, 23, 42], fontStyle: 'bold' },
+        theme: 'grid',
+        margin: { left: margin, right: margin },
+      })
+      y = ((doc as any).lastAutoTable?.finalY ?? y) + 20
+    }
+
+    if (periodIncludeCashFlow && periodView.data) {
+      const receivedRows = periodView.data.cashFlowStatement?.receivedAccounts ?? []
+      const paidRows = periodView.data.cashFlowStatement?.paidAccounts ?? []
+      const estimatedRows = receivedRows.length + paidRows.length + 8
+      ensureSpace(Math.max(150, estimatedRows * 18))
+      y = addPdfSectionTitle(doc, 'Cash Flow Statement', y, margin)
+      const cashFlowBody: Array<Array<string | number>> = []
+      cashFlowBody.push(['Operating Activities', ''])
+      for (const row of receivedRows) {
+        cashFlowBody.push([`Cash in: ${row.code} - ${row.name}`, formatDecimal(row.amount)])
+      }
+      cashFlowBody.push(['Cash received from fuel sales', formatDecimal(periodViewCashFlowRows.incomeTotal)])
+      for (const row of paidRows) {
+        cashFlowBody.push([`Cash out: ${row.code} - ${row.name}`, formatDecimal(row.amount)])
+      }
+      cashFlowBody.push(['Cash paid for expense', formatDecimal(periodViewCashFlowRows.expenseTotal)])
+      cashFlowBody.push(['Net Cash from Operating', formatDecimal(periodViewCashFlowRows.netOperating)])
+      autoTable(doc, {
+        startY: y,
+        head: [['Description', 'Amount ($)']],
+        body: cashFlowBody,
+        styles: { fontSize: 9, cellPadding: 4, textColor: [31, 41, 55] },
+        headStyles: { fillColor: [226, 232, 240], textColor: [15, 23, 42], fontStyle: 'bold' },
+        theme: 'grid',
+        margin: { left: margin, right: margin },
+      })
+    }
+
+    addFooter()
+    openPdfInNewTab(doc)
+  }
+
   if (kind === 'ledger') {
     const ledgerEntryView = financialEntryView ?? 'adjusted'
     return (
@@ -1486,6 +1705,282 @@ export function FinancialReportsPage() {
             periodLabel={plPeriodLabel}
             documentHeading={entryViewReportTitle('pl', plEntryView)}
           />
+        )}
+      </div>
+    )
+  }
+
+  if (kind === 'period-view') {
+    const periodEntryView = financialEntryView ?? 'adjusted'
+    const selectedClosedPeriod = periodViewClosedPeriods.find((p) => p.key === periodViewClosedPeriod) ?? null
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold text-slate-900">Financial report period view</h1>
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            onClick={handlePeriodViewExport}
+          >
+            Print / Export PDF
+          </button>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Entry view</p>
+            <EntryViewTabs value={periodEntryView} onChange={setFinancialEntryView} />
+          </div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
+            {isSuperAdmin && (
+              <div className="w-full min-w-0 lg:w-52">
+                <label className="mb-1 block text-sm font-medium text-slate-700">Business</label>
+                <FormSelect
+                  options={businessOptions}
+                  value={businessOptions.find((o) => o.value === String(plBusinessId ?? '')) ?? null}
+                  onChange={(opt) => {
+                    setPlBusinessId(opt ? Number(opt.value) : null)
+                    setPlStationId(null)
+                  }}
+                  placeholder="Select business"
+                />
+              </div>
+            )}
+            {showStationPicker && (
+              <div className="w-full min-w-0 lg:w-52">
+                <label className="mb-1 block text-sm font-medium text-slate-700">Station</label>
+                <FormSelect
+                  options={plStationOptions}
+                  value={plStationOptions.find((o) => o.value === String(plStationId ?? '')) ?? null}
+                  onChange={(opt) => setPlStationId(opt ? Number(opt.value) : null)}
+                  placeholder="All stations"
+                  isClearable
+                  isDisabled={effectivePlBusinessId <= 0 || (isSuperAdmin && !plBusinessId)}
+                />
+              </div>
+            )}
+            <div className="w-full min-w-0 lg:w-80">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Closed period</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={periodViewClosedPeriod ?? ''}
+                onChange={(e) => setPeriodViewClosedPeriod(e.target.value || null)}
+                disabled={periodViewClosedPeriods.length === 0}
+              >
+                {periodViewClosedPeriods.length === 0 ? (
+                  <option value="">No closed periods</option>
+                ) : (
+                  periodViewClosedPeriods.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {formatReportPeriod(p.from, p.to)}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+            <div className="w-full min-w-0 sm:max-w-[11rem]">
+              <label className="mb-1 block text-sm font-medium text-slate-700">From</label>
+              <input type="date" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-slate-50" value={selectedClosedPeriod?.from ?? from} readOnly />
+            </div>
+            <div className="w-full min-w-0 sm:max-w-[11rem]">
+              <label className="mb-1 block text-sm font-medium text-slate-700">To</label>
+              <input type="date" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-slate-50" value={selectedClosedPeriod?.to ?? to} readOnly />
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-4">
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={periodIncludeIncome}
+                onChange={(e) => setPeriodIncludeIncome(e.target.checked)}
+              />
+              Income Statement
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={periodIncludeBalanceSheet}
+                onChange={(e) => setPeriodIncludeBalanceSheet(e.target.checked)}
+              />
+              Balance Sheet
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={periodIncludeCashFlow}
+                onChange={(e) => setPeriodIncludeCashFlow(e.target.checked)}
+              />
+              Cash Flow Statement
+            </label>
+          </div>
+        </div>
+
+        {effectivePlBusinessId <= 0 && isSuperAdmin ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Select a business to load the report.
+          </p>
+        ) : periodViewClosedPeriods.length === 0 ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            No closed accounting periods found for this business.
+          </p>
+        ) : needsReportStation ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{reportStationBlockedMessage}</p>
+        ) : periodView.isFetching ? (
+          <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">Loading report period view…</p>
+        ) : (
+          <div className="space-y-5">
+            {periodIncludeIncome && (
+              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-lg font-semibold text-slate-900">Income Statement</div>
+                <table className="w-full min-w-[32rem] text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-semibold text-slate-700">Description</th>
+                      <th className="px-4 py-2 text-left font-semibold text-emerald-800">Amount ($)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t bg-slate-50">
+                      <td className="px-4 py-2 font-bold text-slate-800">Income</td>
+                      <td />
+                    </tr>
+                    {(periodView.data?.incomeStatement?.incomeAccounts ?? []).map((row) => (
+                      <tr className="border-t" key={`pv-income-${row.code}`}>
+                        <td className="px-4 py-2 pl-8 font-semibold text-slate-800">{row.code} - {row.name}</td>
+                        <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.amount)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t">
+                      <td className="px-4 py-2 font-bold text-slate-800">Sales Total</td>
+                      <td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodView.data?.incomeStatement?.sales ?? 0)}</td>
+                    </tr>
+                    <tr className="border-t bg-slate-50">
+                      <td className="px-4 py-2 font-bold text-slate-800">COGS</td>
+                      <td />
+                    </tr>
+                    {(periodView.data?.incomeStatement?.cogsAccounts ?? []).map((row) => (
+                      <tr className="border-t" key={`pv-cogs-${row.code}`}>
+                        <td className="px-4 py-2 pl-8 font-semibold text-slate-800">{row.code} - {row.name}</td>
+                        <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.amount)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t">
+                      <td className="px-4 py-2 font-bold text-slate-800">COGS Total</td>
+                      <td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodView.data?.incomeStatement?.cogs ?? 0)}</td>
+                    </tr>
+                    <tr className="border-t">
+                      <td className="px-4 py-2 font-semibold text-slate-800">Gross Profit</td>
+                      <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(periodView.data?.incomeStatement?.grossProfit ?? 0)}</td>
+                    </tr>
+                    <tr className="border-t bg-slate-50">
+                      <td className="px-4 py-2 font-bold text-slate-800">Expense</td>
+                      <td />
+                    </tr>
+                    {(periodView.data?.incomeStatement?.expenseAccounts ?? []).map((row) => (
+                      <tr className="border-t" key={`pv-expense-${row.code}`}>
+                        <td className="px-4 py-2 pl-8 font-semibold text-slate-800">{row.code} - {row.name}</td>
+                        <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.amount)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t"><td className="px-4 py-2 font-semibold text-slate-800">Total Expense</td><td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(periodView.data?.incomeStatement?.totalExpense ?? 0)}</td></tr>
+                    <tr className="border-t"><td className="px-4 py-2 font-bold text-green-600">Net Income</td><td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodView.data?.incomeStatement?.netIncome ?? 0)}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {periodIncludeBalanceSheet && (
+              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-lg font-semibold text-slate-900">Balance Sheet</div>
+                <table className="w-full min-w-[32rem] text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-semibold text-slate-700">Description</th>
+                      <th className="px-4 py-2 text-left font-semibold text-emerald-800">Amount ($)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t bg-slate-50">
+                      <td className="px-4 py-2 font-bold text-slate-800">Assets</td>
+                      <td />
+                    </tr>
+                    {(periodView.data?.balanceSheet?.assets ?? []).map((row) => (
+                      <tr className="border-t" key={`pv-asset-${row.code}`}>
+                        <td className="px-4 py-2 pl-8 font-semibold text-slate-800">{row.code} - {row.name}</td>
+                        <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.balance)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t">
+                      <td className="px-4 py-2 font-bold text-slate-800">Total Asset</td>
+                      <td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodView.data?.balanceSheet?.totalAsset ?? 0)}</td>
+                    </tr>
+
+                    <tr className="border-t bg-slate-50">
+                      <td className="px-4 py-2 font-bold text-slate-800">Liabilities</td>
+                      <td />
+                    </tr>
+                    {(periodView.data?.balanceSheet?.liabilities ?? []).map((row) => (
+                      <tr className="border-t" key={`pv-liability-${row.code}`}>
+                        <td className="px-4 py-2 pl-8 font-semibold text-slate-800">{row.code} - {row.name}</td>
+                        <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.balance)}</td>
+                      </tr>
+                    ))}
+
+                    <tr className="border-t bg-slate-50">
+                      <td className="px-4 py-2 font-bold text-slate-800">Equity</td>
+                      <td />
+                    </tr>
+                    {(periodView.data?.balanceSheet?.equity ?? []).map((row) => (
+                      <tr className="border-t" key={`pv-equity-${row.code}`}>
+                        <td className="px-4 py-2 pl-8 font-semibold text-slate-800">{row.code} - {row.name}</td>
+                        <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.balance)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t">
+                      <td className="px-4 py-2 font-bold text-green-600">Net Income</td>
+                      <td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodView.data?.balanceSheet?.netIncome ?? 0)}</td>
+                    </tr>
+                    <tr className="border-t">
+                      <td className="px-4 py-2 font-bold text-slate-800">Total Equity</td>
+                      <td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodView.data?.balanceSheet?.totalEquity ?? 0)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {periodIncludeCashFlow && (
+              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-lg font-semibold text-slate-900">Cash Flow Statement</div>
+                <table className="w-full min-w-[32rem] text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-semibold text-slate-700">Description</th>
+                      <th className="px-4 py-2 text-left font-semibold text-emerald-800">Amount ($)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t"><td className="px-4 py-2 font-bold text-slate-800">Operating Activities</td><td className="px-4 py-2" /></tr>
+                    {(periodView.data?.cashFlowStatement?.receivedAccounts ?? []).map((row) => (
+                      <tr className="border-t" key={`pv-cf-in-${row.code}`}>
+                        <td className="px-4 py-2 pl-8 font-semibold text-slate-800">Cash in: {row.code} - {row.name}</td>
+                        <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.amount)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t"><td className="px-4 py-2 pl-8 font-semibold text-slate-800">Cash received from fuel sales</td><td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(periodViewCashFlowRows.incomeTotal)}</td></tr>
+                    {(periodView.data?.cashFlowStatement?.paidAccounts ?? []).map((row) => (
+                      <tr className="border-t" key={`pv-cf-out-${row.code}`}>
+                        <td className="px-4 py-2 pl-8 font-semibold text-slate-800">Cash out: {row.code} - {row.name}</td>
+                        <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.amount)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t"><td className="px-4 py-2 pl-8 font-semibold text-slate-800">Cash paid for expense</td><td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(periodViewCashFlowRows.expenseTotal)}</td></tr>
+                    <tr className="border-t"><td className="px-4 py-2 font-bold text-green-600">Net Cash from Operating</td><td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodViewCashFlowRows.netOperating)}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
       </div>
     )
