@@ -22,6 +22,7 @@ import {
 import { useAppSelector } from '../app/hooks'
 import { useNavAccess } from '../hooks/useNavAccess'
 import { formatDecimal } from '../lib/formatNumber'
+import { adminNeedsSettingsStation, SETTINGS_STATION_HINT, useEffectiveStationId } from '../lib/stationContext'
 
 type FuelKind = 'petrol' | 'diesel'
 
@@ -76,26 +77,42 @@ export function DashboardPage() {
 
 function DashboardContent() {
   const PIE_COLORS = ['#22c55e', '#0f766e', '#334155', '#64748b', '#94a3b8', '#cbd5e1']
+  const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
+  const effectiveStationId = useEffectiveStationId()
+  const filterStationId =
+    effectiveStationId != null && effectiveStationId > 0 ? effectiveStationId : undefined
+  const filterBusinessId =
+    role === 'SuperAdmin' && authBusinessId != null && authBusinessId > 0 ? authBusinessId : undefined
+  const needsWorkspaceStation = adminNeedsSettingsStation(role, effectiveStationId)
+
   const { data: inventories } = useGetInventoriesQuery({
     page: 1,
     pageSize: 500,
     q: undefined,
+    ...(filterBusinessId != null ? { filterBusinessId } : {}),
+    ...(filterStationId != null ? { filterStationId } : {}),
   })
-  const { data: nozzleRows = [] } = useGetNozzlesByBusinessQuery(authBusinessId ?? 0, {
+  const { data: nozzleRowsRaw = [] } = useGetNozzlesByBusinessQuery(authBusinessId ?? 0, {
     skip: authBusinessId == null || authBusinessId <= 0,
   })
+  const nozzleRows = useMemo(() => {
+    if (filterStationId == null) return nozzleRowsRaw
+    return nozzleRowsRaw.filter((n) => n.stationId === filterStationId)
+  }, [nozzleRowsRaw, filterStationId])
   const { data: dippingsData } = useGetDippingsQuery({
     page: 1,
     pageSize: 1000,
     q: undefined,
-    businessId: undefined,
+    businessId: authBusinessId ?? undefined,
+    ...(filterStationId != null ? { filterStationId } : {}),
   })
   const { data: fuelTypes = [] } = useGetFuelTypesQuery()
   const { data: generatorUsages } = useGetGeneratorUsagesQuery({
     page: 1,
     pageSize: 1000,
     q: undefined,
+    ...(filterStationId != null ? { filterStationId } : {}),
   })
 
   /** Inventory rows from the last three local calendar days, newest first. */
@@ -124,7 +141,11 @@ function DashboardContent() {
     return m
   }, [fuelTypes])
 
-  const dippings = dippingsData?.items ?? []
+  const dippings = useMemo(() => {
+    const items = dippingsData?.items ?? []
+    if (filterStationId == null) return items
+    return items.filter((d) => d.stationId === filterStationId)
+  }, [dippingsData?.items, filterStationId])
 
   const nozzleLabelById = useMemo(() => {
     const m = new Map<number, string>()
@@ -240,6 +261,16 @@ function DashboardContent() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
         <p className="text-slate-600">Inventory amounts (usage × fuel price) and recent records.</p>
+        {needsWorkspaceStation ? (
+          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {SETTINGS_STATION_HINT} Charts and totals stay empty until a station is set.
+          </p>
+        ) : filterStationId != null ? (
+          <p className="mt-2 text-sm text-slate-500">
+            Figures below follow the <strong>station selected in the header</strong> (workspace / Settings), not the whole
+            business.
+          </p>
+        ) : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useGetBusinessesQuery, useGetFuelTypesQuery, useGetOutstandingCustomerFuelGivensQuery, useGetStationsQuery } from '../../app/api/apiSlice'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import { FileText } from 'lucide-react'
+import { useGetBusinessesQuery, useGetOutstandingCustomerFuelGivensQuery, useGetStationsQuery } from '../../app/api/apiSlice'
 import { useAppSelector } from '../../app/hooks'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { formatDecimal } from '../../lib/formatNumber'
@@ -11,6 +14,12 @@ import {
   showStationPickerInForms,
   useEffectiveStationId,
 } from '../../lib/stationContext'
+
+function openPdfInNewTab(doc: jsPDF) {
+  const url = doc.output('bloburl')
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 export function OutstandingCustomersReportPage() {
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
@@ -58,8 +67,6 @@ export function OutstandingCustomersReportPage() {
     { page: 1, pageSize: 500, businessId: effectiveBusinessId || undefined },
     { skip: effectiveBusinessId <= 0 },
   )
-  const { data: fuelTypes = [] } = useGetFuelTypesQuery()
-
   const businessOptions: SelectOption[] = useMemo(
     () => (businessesData?.items ?? []).map((b) => ({ value: String(b.id), label: b.name })),
     [businessesData?.items],
@@ -79,23 +86,84 @@ export function OutstandingCustomersReportPage() {
     return m
   }, [stationsData?.items])
 
-  const fuelNameById = useMemo(() => {
-    const m = new Map<number, string>()
-    for (const f of fuelTypes) m.set(f.id, f.fuelName)
-    return m
-  }, [fuelTypes])
-
   const totalOutstanding = useMemo(() => rows.reduce((s, r) => s + r.balance, 0), [rows])
-  const colCount = showStationCol ? 12 : 11
+  const colCount = showStationCol ? 5 : 4
+
+  const businessLabel =
+    (businessesData?.items ?? []).find((b) => b.id === effectiveBusinessId)?.name?.trim() || 'Business'
+
+  function downloadPdf() {
+    if (rows.length === 0) return
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+    const pageW = doc.internal.pageSize.getWidth()
+    doc.setFillColor(21, 128, 122)
+    doc.rect(0, 0, pageW, 110, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(26)
+    doc.text(businessLabel.toUpperCase(), pageW / 2, 36, { align: 'center' })
+    doc.setFontSize(14)
+    doc.text('OUTSTANDING CUSTOMERS', pageW / 2, 62, { align: 'center' })
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    doc.text(`As of ${new Date().toLocaleDateString()}`, pageW / 2, 86, { align: 'center' })
+
+    const head = showStationCol
+      ? ['#', 'Customer', 'Phone', 'Station', 'Balance']
+      : ['#', 'Customer', 'Phone', 'Balance']
+    const body = rows.map((r, i) =>
+      showStationCol
+        ? [
+            String(i + 1),
+            r.name,
+            r.phone,
+            r.stationId > 0 ? stationNameById.get(r.stationId) ?? `#${r.stationId}` : '—',
+            formatDecimal(r.balance),
+          ]
+        : [String(i + 1), r.name, r.phone, formatDecimal(r.balance)],
+    )
+
+    const sideMargin = 24
+    autoTable(doc, {
+      startY: 128,
+      head: [head],
+      body,
+      foot: [
+        showStationCol
+          ? [
+              { content: 'Total outstanding', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } },
+              { content: formatDecimal(totalOutstanding), styles: { fontStyle: 'bold', halign: 'right' } },
+            ]
+          : [
+              { content: 'Total outstanding', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold' } },
+              { content: formatDecimal(totalOutstanding), styles: { fontStyle: 'bold', halign: 'right' } },
+            ],
+      ],
+      showFoot: 'lastPage',
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [225, 225, 225], textColor: [15, 23, 42] },
+      margin: { left: sideMargin, right: sideMargin, bottom: 60 },
+      didDrawPage: (tableData) => {
+        const pW = doc.internal.pageSize.getWidth()
+        const pH = doc.internal.pageSize.getHeight()
+        const lineY = pH - 34
+        doc.setDrawColor(21, 128, 122)
+        doc.setLineWidth(1)
+        doc.line(sideMargin, lineY, pW - sideMargin, lineY)
+        doc.setFont('helvetica', 'italic')
+        doc.setFontSize(10)
+        doc.setTextColor(100, 116, 139)
+        doc.text('Powered by abaalsoftware', sideMargin, lineY + 15)
+        doc.text(`Page | ${tableData.pageNumber}`, pW - sideMargin, lineY + 15, { align: 'right' })
+      },
+    })
+    openPdfInNewTab(doc)
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Outstanding customers</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Customer fuel-given lines that still have a positive balance. Fully paid lines are not listed.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold text-slate-900">Outstanding customers</h1>
 
       {needsWorkspaceStation ? (
         <p className="text-sm text-amber-800">
@@ -131,31 +199,32 @@ export function OutstandingCustomersReportPage() {
         )}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p className="text-sm text-slate-600">
-          Total outstanding:{' '}
-          <span className="font-semibold tabular-nums text-amber-900">{formatDecimal(totalOutstanding)}</span>
-          <span className="text-slate-400"> · {rows.length} record(s)</span>
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div>
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Total outstanding</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-amber-900">{formatDecimal(totalOutstanding)}</div>
+        </div>
+        <button
+          type="button"
+          onClick={downloadPdf}
+          disabled={rows.length === 0 || isFetching}
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+        >
+          <FileText className="h-4 w-4" />
+          Download PDF
+        </button>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
-              <th className="px-3 py-2 text-left font-semibold text-slate-700">ID</th>
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">#</th>
               <th className="px-3 py-2 text-left font-semibold text-slate-700">Customer</th>
               <th className="px-3 py-2 text-left font-semibold text-slate-700">Phone</th>
-              <th className="px-3 py-2 text-left font-semibold text-slate-700">Date</th>
               {showStationCol ? (
                 <th className="px-3 py-2 text-left font-semibold text-slate-700">Station</th>
               ) : null}
-              <th className="px-3 py-2 text-left font-semibold text-slate-700">Fuel</th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-700">Liters</th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-700">Price / L</th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-700">USD Amount</th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-700">Total due</th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-700">Paid</th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">Balance</th>
             </tr>
           </thead>
@@ -175,25 +244,33 @@ export function OutstandingCustomersReportPage() {
               </tr>
             )}
             {!isFetching &&
-              rows.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/70">
-                  <td className="px-3 py-2 text-slate-800">{r.id}</td>
+              rows.map((r, idx) => (
+                <tr key={r.customerId} className="hover:bg-slate-50/70">
+                  <td className="px-3 py-2 tabular-nums text-slate-600">{idx + 1}</td>
                   <td className="px-3 py-2 text-slate-800">{r.name}</td>
                   <td className="px-3 py-2 text-slate-700">{r.phone}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-slate-700">{new Date(r.date).toLocaleString()}</td>
                   {showStationCol ? (
-                    <td className="px-3 py-2 text-slate-700">{stationNameById.get(r.stationId) ?? `#${r.stationId}`}</td>
+                    <td className="px-3 py-2 text-slate-700">
+                      {r.stationId > 0 ? stationNameById.get(r.stationId) ?? `#${r.stationId}` : '—'}
+                    </td>
                   ) : null}
-                  <td className="px-3 py-2 text-slate-700">{fuelNameById.get(r.fuelTypeId) ?? `#${r.fuelTypeId}`}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatDecimal(r.givenLiter)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatDecimal(r.price)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatDecimal(r.usdAmount)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-medium">{formatDecimal(r.totalDue)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatDecimal(r.totalPaid)}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-semibold text-amber-800">{formatDecimal(r.balance)}</td>
                 </tr>
               ))}
           </tbody>
+          {!isFetching && rows.length > 0 ? (
+            <tfoot className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+              <tr>
+                <td
+                  colSpan={showStationCol ? 4 : 3}
+                  className="px-3 py-3 text-right text-slate-700"
+                >
+                  Total outstanding
+                </td>
+                <td className="px-3 py-3 text-right tabular-nums text-amber-900">{formatDecimal(totalOutstanding)}</td>
+              </tr>
+            </tfoot>
+          ) : null}
         </table>
       </div>
     </div>

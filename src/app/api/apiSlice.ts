@@ -11,11 +11,23 @@ import type {
   BusinessUser,
   Currency,
   CustomerFuelGiven,
+  CustomerFuelGivenCustomer,
+  CustomerIdentityWriteRequest,
+  CustomerWriteRequest,
   CustomerFuelGivenWriteRequest,
   OutstandingCustomerFuelGivenRow,
+  CustomerOption,
   CustomerPayment,
   CustomerPaymentPreviewBalance,
   CustomerPaymentWriteRequest,
+  CustomerReportDto,
+  Employee,
+  EmployeeOption,
+  EmployeePayment,
+  EmployeePaymentHistoryDto,
+  EmployeePaymentPreviewBalance,
+  EmployeePaymentWriteRequest,
+  EmployeeWriteRequest,
   Expense,
   ExpenseWriteRequest,
   Dipping,
@@ -47,6 +59,9 @@ import type {
   AppNotificationItem,
   TransferPendingConfirm,
   Menu,
+  PayrollRunResult,
+  PayrollRunWriteRequest,
+  PayrollStatusReportDto,
   Purchase,
   PurchaseHeaderWriteRequest,
   PurchaseItem,
@@ -55,6 +70,7 @@ import type {
   PurchaseWriteRequest,
   SupplierPayment,
   SupplierPaymentWriteRequest,
+  SupplierReportDto,
   PagedResult,
   BusinessFuelInventoryBalance,
   BusinessFuelInventoryCredit,
@@ -111,9 +127,394 @@ function normalizePurchaseWithItems(raw: unknown): PurchaseWithItems {
   const items = Array.isArray(rawItems) ? rawItems.map(normalizePurchaseItemRow) : []
   return {
     ...(o as PurchaseWithItems),
-    status: String(o.status ?? o.Status ?? 'Unpaid') as PurchaseWithItems['status'],
-    amountPaid: Number(o.amountPaid ?? o.AmountPaid ?? 0),
     items,
+  }
+}
+
+function normalizeSupplierPaymentRow(raw: unknown): SupplierPayment {
+  if (raw == null || typeof raw !== 'object') {
+    return {
+      id: 0,
+      referenceNo: null,
+      supplierId: 0,
+      description: 'Payment',
+      chargedAmount: 0,
+      paidAmount: 0,
+      balance: 0,
+      purchaseId: null,
+      date: '',
+      businessId: 0,
+      userId: 0,
+      createdAt: '',
+      updatedAt: '',
+    }
+  }
+  const r = raw as Record<string, unknown>
+  return {
+    id: Number(r.id ?? r.Id ?? 0),
+    referenceNo: (r.referenceNo ?? r.ReferenceNo) as string | null | undefined,
+    supplierId: Number(r.supplierId ?? r.SupplierId ?? 0),
+    description: String(r.description ?? r.Description ?? 'Payment'),
+    chargedAmount: Number(r.chargedAmount ?? r.ChargedAmount ?? r.amount ?? r.Amount ?? 0),
+    paidAmount: Number(r.paidAmount ?? r.PaidAmount ?? 0),
+    balance: Number(r.balance ?? r.Balance ?? 0),
+    purchaseId: (r.purchaseId ?? r.PurchaseId) != null ? Number(r.purchaseId ?? r.PurchaseId) : null,
+    date: String(r.date ?? r.Date ?? ''),
+    businessId: Number(r.businessId ?? r.BusinessId ?? 0),
+    userId: Number(r.userId ?? r.UserId ?? 0),
+    createdAt: String(r.createdAt ?? r.CreatedAt ?? ''),
+    updatedAt: String(r.updatedAt ?? r.UpdatedAt ?? ''),
+  }
+}
+
+function normalizeSupplierPaymentsPaged(raw: unknown): PagedResult<SupplierPayment> {
+  const o = raw as Record<string, unknown>
+  const rawItems = o.items ?? o.Items
+  const items = Array.isArray(rawItems) ? rawItems.map(normalizeSupplierPaymentRow) : []
+  return {
+    items,
+    totalCount: Number(o.totalCount ?? o.TotalCount ?? 0),
+    page: Number(o.page ?? o.Page ?? 1),
+    pageSize: Number(o.pageSize ?? o.PageSize ?? 50),
+  }
+}
+
+function normalizeCustomerPaymentRow(raw: unknown): CustomerPayment {
+  const x = (raw as Record<string, unknown>) ?? {}
+  const customer = ((x.customer ?? x.Customer) as Record<string, unknown> | undefined) ?? {}
+  return {
+    id: Number(x.id ?? x.Id ?? 0),
+    customerId: Number(x.customerId ?? x.CustomerId ?? 0),
+    referenceNo: (x.referenceNo ?? x.ReferenceNo) as string | null | undefined,
+    description: String(x.description ?? x.Description ?? 'Payment'),
+    customerName: String(x.customerName ?? x.CustomerName ?? customer.name ?? customer.Name ?? ''),
+    customerPhone: String(x.customerPhone ?? x.CustomerPhone ?? customer.phone ?? customer.Phone ?? ''),
+    chargedAmount: Number(x.chargedAmount ?? x.ChargedAmount ?? 0),
+    amountPaid: Number(x.amountPaid ?? x.AmountPaid ?? 0),
+    balance: Number(x.balance ?? x.Balance ?? 0),
+    paymentDate: String(x.paymentDate ?? x.PaymentDate ?? ''),
+    businessId: Number(x.businessId ?? x.BusinessId ?? 0),
+    userId: Number(x.userId ?? x.UserId ?? 0),
+    userName: (x.userName ?? x.UserName) as string | null | undefined,
+    remainingBalance:
+      (x.remainingBalance ?? x.RemainingBalance) == null
+        ? null
+        : Number(x.remainingBalance ?? x.RemainingBalance),
+    paymentStatus: (x.paymentStatus ?? x.PaymentStatus) as string | null | undefined,
+  }
+}
+
+function normalizeCustomerPaymentsPaged(raw: unknown): PagedResult<CustomerPayment> {
+  const o = raw as Record<string, unknown>
+  const rawItems = o.items ?? o.Items
+  const items = Array.isArray(rawItems) ? rawItems.map(normalizeCustomerPaymentRow) : []
+  return {
+    items,
+    totalCount: Number(o.totalCount ?? o.TotalCount ?? 0),
+    page: Number(o.page ?? o.Page ?? 1),
+    pageSize: Number(o.pageSize ?? o.PageSize ?? 50),
+  }
+}
+
+function normalizeCustomerFuelGivenRow(raw: unknown): CustomerFuelGiven {
+  const x = (raw as Record<string, unknown>) ?? {}
+  const customer = ((x.customer ?? x.Customer) as Record<string, unknown> | undefined) ?? {}
+  const currencyIdNum = Number(x.currencyId ?? x.CurrencyId ?? 0)
+  const customerIdNum = Number(x.customerId ?? x.CustomerId ?? customer.id ?? customer.Id ?? 0)
+  return {
+    id: Number(x.id ?? x.Id ?? 0),
+    customerId: customerIdNum > 0 ? customerIdNum : undefined,
+    name: String(x.name ?? x.Name ?? customer.name ?? customer.Name ?? ''),
+    phone: String(x.phone ?? x.Phone ?? customer.phone ?? customer.Phone ?? ''),
+    type: String(x.type ?? x.Type ?? 'Fuel'),
+    currencyId: currencyIdNum > 0 ? currencyIdNum : undefined,
+    fuelTypeId: Number(x.fuelTypeId ?? x.FuelTypeId ?? 0),
+    givenLiter: Number(x.givenLiter ?? x.GivenLiter ?? 0),
+    price: Number(x.price ?? x.Price ?? 0),
+    usdAmount: Number(x.usdAmount ?? x.UsdAmount ?? 0),
+    cashAmount: Number(x.cashAmount ?? x.CashAmount ?? 0),
+    remark: (x.remark ?? x.Remark) as string | null | undefined,
+    stationId: Number(x.stationId ?? x.StationId ?? 0),
+    businessId: Number(x.businessId ?? x.BusinessId ?? 0),
+    date: String(x.date ?? x.Date ?? ''),
+  }
+}
+
+function normalizeCustomerFuelGivensPaged(raw: unknown): PagedResult<CustomerFuelGiven> {
+  const o = raw as Record<string, unknown>
+  const rawItems = o.items ?? o.Items
+  const items = Array.isArray(rawItems) ? rawItems.map(normalizeCustomerFuelGivenRow) : []
+  return {
+    items,
+    totalCount: Number(o.totalCount ?? o.TotalCount ?? 0),
+    page: Number(o.page ?? o.Page ?? 1),
+    pageSize: Number(o.pageSize ?? o.PageSize ?? 50),
+  }
+}
+
+function normalizeEmployeeRow(raw: unknown): Employee {
+  const x = (raw as Record<string, unknown>) ?? {}
+  const sid = x.stationId ?? x.StationId
+  return {
+    id: Number(x.id ?? x.Id ?? 0),
+    name: String(x.name ?? x.Name ?? ''),
+    phone: String(x.phone ?? x.Phone ?? ''),
+    email: String(x.email ?? x.Email ?? ''),
+    address: String(x.address ?? x.Address ?? ''),
+    position: String(x.position ?? x.Position ?? ''),
+    baseSalary: Number(x.baseSalary ?? x.BaseSalary ?? 0),
+    isActive: Boolean(x.isActive ?? x.IsActive ?? true),
+    businessId: Number(x.businessId ?? x.BusinessId ?? 0),
+    stationId: sid == null ? null : Number(sid),
+  }
+}
+
+function normalizeEmployeesPaged(raw: unknown): PagedResult<Employee> {
+  const o = raw as Record<string, unknown>
+  const rawItems = o.items ?? o.Items
+  const items = Array.isArray(rawItems) ? rawItems.map(normalizeEmployeeRow) : []
+  return {
+    items,
+    totalCount: Number(o.totalCount ?? o.TotalCount ?? 0),
+    page: Number(o.page ?? o.Page ?? 1),
+    pageSize: Number(o.pageSize ?? o.PageSize ?? 50),
+  }
+}
+
+function normalizeEmployeePaymentRow(raw: unknown): EmployeePayment {
+  const x = (raw as Record<string, unknown>) ?? {}
+  const sid = x.stationId ?? x.StationId
+  return {
+    id: Number(x.id ?? x.Id ?? 0),
+    employeeId: Number(x.employeeId ?? x.EmployeeId ?? 0),
+    referenceNo: (x.referenceNo ?? x.ReferenceNo) as string | null | undefined,
+    description: String(x.description ?? x.Description ?? 'Payment'),
+    chargedAmount: Number(x.chargedAmount ?? x.ChargedAmount ?? 0),
+    paidAmount: Number(x.paidAmount ?? x.PaidAmount ?? 0),
+    balance: Number(x.balance ?? x.Balance ?? 0),
+    paymentDate: String(x.paymentDate ?? x.PaymentDate ?? ''),
+    periodLabel: (x.periodLabel ?? x.PeriodLabel) as string | null | undefined,
+    businessId: Number(x.businessId ?? x.BusinessId ?? 0),
+    userId: Number(x.userId ?? x.UserId ?? 0),
+    stationId: sid == null ? null : Number(sid),
+    userName: (x.userName ?? x.UserName) as string | null | undefined,
+    employeeName: (x.employeeName ?? x.EmployeeName) as string | null | undefined,
+    remainingBalance:
+      (x.remainingBalance ?? x.RemainingBalance) == null
+        ? null
+        : Number(x.remainingBalance ?? x.RemainingBalance),
+  }
+}
+
+function normalizeEmployeePaymentsPaged(raw: unknown): PagedResult<EmployeePayment> {
+  const o = raw as Record<string, unknown>
+  const rawItems = o.items ?? o.Items
+  const items = Array.isArray(rawItems) ? rawItems.map(normalizeEmployeePaymentRow) : []
+  return {
+    items,
+    totalCount: Number(o.totalCount ?? o.TotalCount ?? 0),
+    page: Number(o.page ?? o.Page ?? 1),
+    pageSize: Number(o.pageSize ?? o.PageSize ?? 50),
+  }
+}
+
+function normalizeEmployeePaymentPreviewBalance(raw: unknown): EmployeePaymentPreviewBalance {
+  const x = (raw as Record<string, unknown>) ?? {}
+  return {
+    employeeId: Number(x.employeeId ?? x.EmployeeId ?? 0),
+    name: String(x.name ?? x.Name ?? ''),
+    phone: String(x.phone ?? x.Phone ?? ''),
+    position: String(x.position ?? x.Position ?? ''),
+    baseSalary: Number(x.baseSalary ?? x.BaseSalary ?? 0),
+    totalDue: Number(x.totalDue ?? x.TotalDue ?? 0),
+    totalPaid: Number(x.totalPaid ?? x.TotalPaid ?? 0),
+    balance: Number(x.balance ?? x.Balance ?? 0),
+  }
+}
+
+function normalizeEmployeePaymentHistoryDto(raw: unknown): EmployeePaymentHistoryDto {
+  const o = raw as Record<string, unknown>
+  const rowsRaw = o.rows ?? o.Rows ?? []
+  const rows = Array.isArray(rowsRaw)
+    ? rowsRaw.map((r) => {
+        const x = r as Record<string, unknown>
+        const sid = x.stationId ?? x.StationId
+        return {
+          id: Number(x.id ?? x.Id ?? 0),
+          date: String(x.date ?? x.Date ?? ''),
+          description: String(x.description ?? x.Description ?? ''),
+          periodLabel: (x.periodLabel ?? x.PeriodLabel) as string | null | undefined,
+          charged: Number(x.charged ?? x.Charged ?? 0),
+          paid: Number(x.paid ?? x.Paid ?? 0),
+          balance: Number(x.balance ?? x.Balance ?? 0),
+          referenceNo: (x.referenceNo ?? x.ReferenceNo) as string | null | undefined,
+          stationId: sid == null ? null : Number(sid),
+        }
+      })
+    : []
+  return {
+    from: String(o.from ?? o.From ?? ''),
+    to: String(o.to ?? o.To ?? ''),
+    employeeId: Number(o.employeeId ?? o.EmployeeId ?? 0),
+    employeeName: String(o.employeeName ?? o.EmployeeName ?? ''),
+    employeePhone: String(o.employeePhone ?? o.EmployeePhone ?? ''),
+    employeePosition: String(o.employeePosition ?? o.EmployeePosition ?? ''),
+    baseSalary: Number(o.baseSalary ?? o.BaseSalary ?? 0),
+    rows,
+    totalCharged: Number(o.totalCharged ?? o.TotalCharged ?? 0),
+    totalPaid: Number(o.totalPaid ?? o.TotalPaid ?? 0),
+    outstandingBalance: Number(o.outstandingBalance ?? o.OutstandingBalance ?? 0),
+  }
+}
+
+function normalizePayrollStatusReportDto(raw: unknown): PayrollStatusReportDto {
+  const o = raw as Record<string, unknown>
+  const mapRows = (arr: unknown) =>
+    Array.isArray(arr)
+      ? arr.map((r) => {
+          const x = r as Record<string, unknown>
+          const sid = x.stationId ?? x.StationId
+          return {
+            employeeId: Number(x.employeeId ?? x.EmployeeId ?? 0),
+            name: String(x.name ?? x.Name ?? ''),
+            phone: String(x.phone ?? x.Phone ?? ''),
+            position: String(x.position ?? x.Position ?? ''),
+            stationId: sid == null ? null : Number(sid),
+            baseSalary: Number(x.baseSalary ?? x.BaseSalary ?? 0),
+            totalCharged: Number(x.totalCharged ?? x.TotalCharged ?? 0),
+            totalPaid: Number(x.totalPaid ?? x.TotalPaid ?? 0),
+            balance: Number(x.balance ?? x.Balance ?? 0),
+            lastPaymentDate: (x.lastPaymentDate ?? x.LastPaymentDate) as string | null | undefined,
+          }
+        })
+      : []
+  const st = o.stationId ?? o.StationId
+  return {
+    businessId: Number(o.businessId ?? o.BusinessId ?? 0),
+    period: String(o.period ?? o.Period ?? ''),
+    stationId: st == null ? null : Number(st),
+    paid: mapRows(o.paid ?? o.Paid),
+    unpaid: mapRows(o.unpaid ?? o.Unpaid),
+  }
+}
+
+function normalizeEmployeeOptionRow(raw: unknown): EmployeeOption {
+  const x = (raw as Record<string, unknown>) ?? {}
+  const sid = x.stationId ?? x.StationId
+  return {
+    id: Number(x.id ?? x.Id ?? 0),
+    name: String(x.name ?? x.Name ?? ''),
+    phone: String(x.phone ?? x.Phone ?? ''),
+    position: String(x.position ?? x.Position ?? ''),
+    baseSalary: Number(x.baseSalary ?? x.BaseSalary ?? 0),
+    stationId: sid == null ? null : Number(sid),
+    hasSalaryForPeriod: Boolean(x.hasSalaryForPeriod ?? x.HasSalaryForPeriod ?? false),
+  }
+}
+
+function normalizePayrollRunResult(raw: unknown): PayrollRunResult {
+  const o = raw as Record<string, unknown>
+  const rowsRaw = o.rows ?? o.Rows ?? []
+  const rows = Array.isArray(rowsRaw) ? rowsRaw.map(normalizeEmployeePaymentRow) : []
+  const st = o.stationId ?? o.StationId
+  const skippedRaw = o.skippedEmployees ?? o.SkippedEmployees
+  const skippedEmployees = Array.isArray(skippedRaw)
+    ? skippedRaw.map((s) => {
+        const r = s as Record<string, unknown>
+        return {
+          employeeId: Number(r.employeeId ?? r.EmployeeId ?? 0),
+          name: String(r.name ?? r.Name ?? ''),
+          reason: String(r.reason ?? r.Reason ?? ''),
+        }
+      })
+    : undefined
+  return {
+    period: String(o.period ?? o.Period ?? ''),
+    paymentDate: String(o.paymentDate ?? o.PaymentDate ?? ''),
+    stationId: st == null ? null : Number(st),
+    createdRowCount: Number(o.createdRowCount ?? o.CreatedRowCount ?? 0),
+    paidEmployeeCount: Number(o.paidEmployeeCount ?? o.PaidEmployeeCount ?? 0),
+    totalCharged: Number(o.totalCharged ?? o.TotalCharged ?? 0),
+    totalPaid: Number(o.totalPaid ?? o.TotalPaid ?? 0),
+    rows,
+    skippedEmployeeCount:
+      o.skippedEmployeeCount != null || o.SkippedEmployeeCount != null
+        ? Number(o.skippedEmployeeCount ?? o.SkippedEmployeeCount ?? 0)
+        : skippedEmployees?.length,
+    skippedEmployees,
+  }
+}
+
+function normalizeCustomerReportDto(raw: unknown): CustomerReportDto {
+  const o = raw as Record<string, unknown>
+  const rowsRaw = o.rows ?? o.Rows ?? []
+  const rows = Array.isArray(rowsRaw)
+    ? rowsRaw.map((r) => {
+        const x = r as Record<string, unknown>
+        return {
+          id: Number(x.id ?? x.Id ?? 0),
+          customerId: Number(x.customerId ?? x.CustomerId ?? 0),
+          name: String(x.name ?? x.Name ?? ''),
+          phone: String(x.phone ?? x.Phone ?? ''),
+          description: String(x.description ?? x.Description ?? ''),
+          type: (x.type ?? x.Type) as string | null | undefined,
+          fuelTypeId: (x.fuelTypeId ?? x.FuelTypeId) == null ? null : Number(x.fuelTypeId ?? x.FuelTypeId),
+          fuelTypeName: (x.fuelTypeName ?? x.FuelTypeName) as string | null | undefined,
+          liters: (x.liters ?? x.Liters) == null ? null : Number(x.liters ?? x.Liters),
+          price: (x.price ?? x.Price) == null ? null : Number(x.price ?? x.Price),
+          cashTaken: Number(x.cashTaken ?? x.CashTaken ?? 0),
+          charged: Number(x.charged ?? x.Charged ?? 0),
+          paid: Number(x.paid ?? x.Paid ?? 0),
+          balance: Number(x.balance ?? x.Balance ?? 0),
+          date: String(x.date ?? x.Date ?? ''),
+          referenceNo: (x.referenceNo ?? x.ReferenceNo) as string | null | undefined,
+        }
+      })
+    : []
+  return {
+    from: String(o.from ?? o.From ?? ''),
+    to: String(o.to ?? o.To ?? ''),
+    customerId: Number(o.customerId ?? o.CustomerId ?? 0),
+    customerName: (o.customerName ?? o.CustomerName) as string | null | undefined,
+    customerPhone: (o.customerPhone ?? o.CustomerPhone) as string | null | undefined,
+    rows,
+    totalCharged: Number(o.totalCharged ?? o.TotalCharged ?? 0),
+    totalCashTaken: Number(o.totalCashTaken ?? o.TotalCashTaken ?? 0),
+    totalLiters: Number(o.totalLiters ?? o.TotalLiters ?? 0),
+    totalPaid: Number(o.totalPaid ?? o.TotalPaid ?? 0),
+    balance: Number(o.balance ?? o.Balance ?? 0),
+  }
+}
+
+function normalizeSupplierReportDto(raw: unknown): SupplierReportDto {
+  const o = raw as Record<string, unknown>
+  const rowsRaw = o.rows ?? o.Rows ?? []
+  const rows = Array.isArray(rowsRaw)
+    ? rowsRaw.map((r) => {
+        const x = r as Record<string, unknown>
+        return {
+          id: Number(x.id ?? x.Id ?? 0),
+          name: String(x.name ?? x.Name ?? ''),
+          description: String(x.description ?? x.Description ?? ''),
+          liters: (x.liters ?? x.Liters) == null ? null : Number(x.liters ?? x.Liters),
+          amount: Number(x.amount ?? x.Amount ?? 0),
+          paid: Number(x.paid ?? x.Paid ?? 0),
+          balance: Number(x.balance ?? x.Balance ?? 0),
+          date: String(x.date ?? x.Date ?? ''),
+          purchaseId: (x.purchaseId ?? x.PurchaseId) == null ? null : Number(x.purchaseId ?? x.PurchaseId),
+          referenceNo: (x.referenceNo ?? x.ReferenceNo) as string | null | undefined,
+        }
+      })
+    : []
+  return {
+    from: String(o.from ?? o.From ?? ''),
+    to: String(o.to ?? o.To ?? ''),
+    supplierId: (o.supplierId ?? o.SupplierId) == null ? null : Number(o.supplierId ?? o.SupplierId),
+    supplierName: (o.supplierName ?? o.SupplierName) as string | null | undefined,
+    rows,
+    totalCharged: Number(o.totalCharged ?? o.TotalCharged ?? 0),
+    totalPaid: Number(o.totalPaid ?? o.TotalPaid ?? 0),
+    balance: Number(o.balance ?? o.Balance ?? 0),
   }
 }
 
@@ -127,8 +528,21 @@ export type DippingsPagedArg = PagedArg & { businessId?: number; filterStationId
 export type AccountsPagedArg = PagedArg & { businessId?: number }
 
 export type SuppliersPagedArg = PagedArg & { businessId?: number }
+export type EmployeesPagedArg = PagedArg & {
+  businessId?: number
+  filterStationId?: number
+  includeInactive?: boolean
+}
+export type EmployeePaymentsPagedArg = PagedArg & {
+  businessId?: number
+  filterStationId?: number
+  employeeId?: number
+  period?: string
+}
 
 export type SupplierPaymentsPagedArg = PagedArg & { businessId?: number }
+
+export type CustomerPaymentsPagedArg = PagedArg & { filterStationId?: number }
 
 /** Date-only strings `yyyy-MM-dd` for `CreatedAt` range (UTC day bounds on the API). */
 export type LiterReceivedsPagedArg = PagedArg & { from?: string; to?: string; filterStationId?: number }
@@ -195,6 +609,8 @@ export const apiSlice = createApi({
     'Supplier',
     'Purchase',
     'SupplierPayment',
+    'SupplierReport',
+    'CustomerReport',
     'CustomerFuelGiven',
     'Account',
     'JournalEntry',
@@ -205,6 +621,9 @@ export const apiSlice = createApi({
     'RecurringJournal',
     'AccountingPeriod',
     'Notification',
+    'Employee',
+    'EmployeePayment',
+    'PayrollReport',
   ],
   endpoints: (builder) => ({
     login: builder.mutation<AuthResponse, { emailOrPhone: string; password: string }>({
@@ -550,7 +969,45 @@ export const apiSlice = createApi({
           ...(filterStationId != null && filterStationId > 0 ? { filterStationId } : {}),
         },
       }),
+      transformResponse: normalizeCustomerFuelGivensPaged,
       providesTags: ['CustomerFuelGiven'],
+    }),
+    getCustomerFuelGivenCustomers: builder.query<PagedResult<CustomerFuelGivenCustomer>, StationScopedPagedArg>({
+      query: ({ page, pageSize, q, filterStationId }) => ({
+        url: 'CustomerFuelGivens/customers',
+        params: {
+          page,
+          pageSize,
+          q,
+          ...(filterStationId != null && filterStationId > 0 ? { filterStationId } : {}),
+        },
+      }),
+      providesTags: ['CustomerFuelGiven'],
+    }),
+    getCustomerFuelGivenCustomerById: builder.query<CustomerFuelGivenCustomer, number>({
+      query: (id) => ({ url: `CustomerFuelGivens/customers/${id}` }),
+      providesTags: ['CustomerFuelGiven'],
+    }),
+    createCustomerFuelGivenCustomer: builder.mutation<CustomerFuelGivenCustomer, CustomerWriteRequest>({
+      query: (body) => ({ url: 'CustomerFuelGivens/customers', method: 'POST', body }),
+      invalidatesTags: ['CustomerFuelGiven', 'CustomerPayment', 'CustomerReport'],
+    }),
+    getCustomerFuelGivenTransactionsByCustomer: builder.query<CustomerFuelGiven[], number>({
+      query: (id) => ({ url: `CustomerFuelGivens/customers/${id}/transactions` }),
+      transformResponse: (raw: unknown): CustomerFuelGiven[] =>
+        Array.isArray(raw) ? raw.map(normalizeCustomerFuelGivenRow) : [],
+      providesTags: ['CustomerFuelGiven'],
+    }),
+    updateCustomerFuelGivenCustomer: builder.mutation<
+      { id: number; name: string; phone: string },
+      { id: number; body: CustomerIdentityWriteRequest }
+    >({
+      query: ({ id, body }) => ({ url: `CustomerFuelGivens/customers/${id}`, method: 'PUT', body }),
+      invalidatesTags: ['CustomerFuelGiven', 'CustomerPayment', 'CustomerReport'],
+    }),
+    deleteCustomerFuelGivenCustomer: builder.mutation<void, number>({
+      query: (id) => ({ url: `CustomerFuelGivens/customers/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['CustomerFuelGiven', 'CustomerPayment', 'CustomerReport', 'Dipping'],
     }),
     getOutstandingCustomerFuelGivens: builder.query<
       OutstandingCustomerFuelGivenRow[],
@@ -659,32 +1116,52 @@ export const apiSlice = createApi({
       ],
     }),
 
-    getCustomerPayments: builder.query<PagedResult<CustomerPayment>, PagedArg>({
-      query: ({ page, pageSize, q }) => ({
+    getCustomerPayments: builder.query<PagedResult<CustomerPayment>, CustomerPaymentsPagedArg>({
+      query: ({ page, pageSize, q, filterStationId }) => ({
         url: 'CustomerPayments',
-        params: { page, pageSize, q },
+        params: {
+          page,
+          pageSize,
+          q,
+          ...(filterStationId != null && filterStationId > 0 ? { filterStationId } : {}),
+        },
       }),
+      transformResponse: normalizeCustomerPaymentsPaged,
       providesTags: ['CustomerPayment'],
     }),
     getCustomerPaymentPreviewBalance: builder.query<
       CustomerPaymentPreviewBalance,
-      { customerFuelGivenId: number; businessId?: number }
+      { customerId: number; businessId?: number }
     >({
-      query: ({ customerFuelGivenId, businessId }) => ({
+      query: ({ customerId, businessId }) => ({
         url: 'CustomerPayments/preview-balance',
         params: {
-          customerFuelGivenId,
+          customerId,
           ...(businessId != null && businessId > 0 ? { businessId } : {}),
         },
       }),
     }),
+    getCustomerPaymentBalance: builder.query<
+      { businessId: number; customerId: number; name: string; phone: string; balance: number },
+      { customerId: number; businessId?: number }
+    >({
+      query: ({ customerId, businessId }) => ({
+        url: 'CustomerPayments/balance',
+        params: {
+          customerId,
+          ...(businessId != null && businessId > 0 ? { businessId } : {}),
+        },
+      }),
+      providesTags: ['CustomerPayment'],
+    }),
     createCustomerPayment: builder.mutation<CustomerPayment, CustomerPaymentWriteRequest>({
       query: (body) => ({ url: 'CustomerPayments', method: 'POST', body }),
-      invalidatesTags: ['CustomerPayment', 'CustomerFuelGiven', 'JournalEntry', 'FinancialReport'],
+      transformResponse: normalizeCustomerPaymentRow,
+      invalidatesTags: ['CustomerPayment', 'CustomerFuelGiven', 'CustomerReport', 'JournalEntry', 'FinancialReport'],
     }),
     deleteCustomerPayment: builder.mutation<void, number>({
       query: (id) => ({ url: `CustomerPayments/${id}`, method: 'DELETE' }),
-      invalidatesTags: ['CustomerPayment', 'CustomerFuelGiven'],
+      invalidatesTags: ['CustomerPayment', 'CustomerFuelGiven', 'CustomerReport'],
     }),
 
     getTrialBalanceReport: builder.query<
@@ -856,9 +1333,16 @@ export const apiSlice = createApi({
 
     getCashOutDailyReport: builder.query<
       CashOutDailyReportDto,
-      { businessId: number; from?: string; to?: string; stationId?: number; expenseType?: string }
+      {
+        businessId: number
+        from?: string
+        to?: string
+        stationId?: number
+        expenseType?: string
+        sideAction?: 'Operation' | 'Management'
+      }
     >({
-      query: ({ businessId, from, to, stationId, expenseType }) => ({
+      query: ({ businessId, from, to, stationId, expenseType, sideAction }) => ({
         url: 'OperationReports/cash-out-daily',
         params: {
           businessId,
@@ -866,6 +1350,7 @@ export const apiSlice = createApi({
           ...(to ? { to } : {}),
           ...(expenseType ? { expenseType } : {}),
           ...(stationId != null && stationId > 0 ? { stationId } : {}),
+          ...(sideAction ? { sideAction } : {}),
         },
       }),
       providesTags: ['Expense', 'FinancialReport'],
@@ -900,17 +1385,85 @@ export const apiSlice = createApi({
       }),
       providesTags: ['Expense', 'Inventory', 'FinancialReport'],
     }),
+    getSupplierReport: builder.query<
+      SupplierReportDto,
+      { businessId: number; supplierId: number; from?: string; to?: string }
+    >({
+      query: ({ businessId, supplierId, from, to }) => ({
+        url: 'OperationReports/supplier-report',
+        params: {
+          businessId,
+          supplierId,
+          ...(from ? { from } : {}),
+          ...(to ? { to } : {}),
+        },
+      }),
+      transformResponse: normalizeSupplierReportDto,
+      providesTags: ['SupplierReport', 'SupplierPayment', 'Purchase'],
+    }),
+    getSupplierPaymentBalance: builder.query<
+      { supplierId: number; businessId: number; balance: number },
+      { supplierId: number; businessId?: number }
+    >({
+      query: ({ supplierId, businessId }) => ({
+        url: 'SupplierPayments/balance',
+        params: { supplierId, ...(businessId != null && businessId > 0 ? { businessId } : {}) },
+      }),
+      providesTags: ['SupplierPayment', 'SupplierReport'],
+    }),
+    getCustomerReport: builder.query<
+      CustomerReportDto,
+      { businessId: number; customerId: number; from?: string; to?: string }
+    >({
+      query: ({ businessId, customerId, from, to }) => ({
+        url: 'OperationReports/customer-report',
+        params: {
+          businessId,
+          customerId,
+          ...(from ? { from } : {}),
+          ...(to ? { to } : {}),
+        },
+      }),
+      transformResponse: normalizeCustomerReportDto,
+      providesTags: ['CustomerReport', 'CustomerPayment', 'CustomerFuelGiven'],
+    }),
+    getOperationReportCustomers: builder.query<CustomerOption[], { businessId: number }>({
+      query: ({ businessId }) => ({
+        url: 'OperationReports/customers',
+        params: { businessId },
+      }),
+      transformResponse: (raw: unknown): CustomerOption[] => {
+        if (!Array.isArray(raw)) return []
+        return raw.map((r) => {
+          const x = r as Record<string, unknown>
+          return {
+            customerId: Number(x.customerId ?? x.CustomerId ?? 0),
+            name: String(x.name ?? x.Name ?? ''),
+            phone: String(x.phone ?? x.Phone ?? ''),
+            lastDate: String(x.lastDate ?? x.LastDate ?? ''),
+          }
+        })
+      },
+      providesTags: ['CustomerFuelGiven', 'CustomerReport'],
+    }),
     getDailySummaryReport: builder.query<
       DailySummaryReportDto,
-      { businessId: number; from: string; to: string; stationId?: number }
+      {
+        businessId: number
+        from: string
+        to: string
+        stationId?: number
+        sideAction?: 'Operation' | 'Management'
+      }
     >({
-      query: ({ businessId, from, to, stationId }) => ({
+      query: ({ businessId, from, to, stationId, sideAction }) => ({
         url: 'OperationReports/daily-summary-report',
         params: {
           businessId,
           from,
           to,
           ...(stationId != null && stationId > 0 ? { stationId } : {}),
+          ...(sideAction ? { sideAction } : {}),
         },
       }),
       providesTags: ['Expense', 'Inventory', 'FinancialReport'],
@@ -993,15 +1546,15 @@ export const apiSlice = createApi({
 
     createCustomerFuelGiven: builder.mutation<CustomerFuelGiven, CustomerFuelGivenWriteRequest>({
       query: (body) => ({ url: 'CustomerFuelGivens', method: 'POST', body }),
-      invalidatesTags: ['CustomerFuelGiven', 'CustomerPayment', 'Dipping'],
+      invalidatesTags: ['CustomerFuelGiven', 'CustomerPayment', 'CustomerReport', 'Dipping'],
     }),
     updateCustomerFuelGiven: builder.mutation<CustomerFuelGiven, { id: number; body: CustomerFuelGivenWriteRequest }>({
       query: ({ id, body }) => ({ url: `CustomerFuelGivens/${id}`, method: 'PUT', body }),
-      invalidatesTags: ['CustomerFuelGiven', 'CustomerPayment', 'Dipping'],
+      invalidatesTags: ['CustomerFuelGiven', 'CustomerPayment', 'CustomerReport', 'Dipping'],
     }),
     deleteCustomerFuelGiven: builder.mutation<void, number>({
       query: (id) => ({ url: `CustomerFuelGivens/${id}`, method: 'DELETE' }),
-      invalidatesTags: ['CustomerFuelGiven', 'CustomerPayment', 'Dipping'],
+      invalidatesTags: ['CustomerFuelGiven', 'CustomerPayment', 'CustomerReport', 'Dipping'],
     }),
 
     createPump: builder.mutation<Pump, PumpWriteRequest>({
@@ -1308,6 +1861,136 @@ export const apiSlice = createApi({
       invalidatesTags: ['Supplier'],
     }),
 
+    getEmployees: builder.query<PagedResult<Employee>, EmployeesPagedArg>({
+      query: ({ page, pageSize, q, businessId, filterStationId, includeInactive }) => ({
+        url: 'Employees',
+        params: {
+          page,
+          pageSize,
+          q,
+          ...(businessId != null && businessId > 0 ? { businessId } : {}),
+          ...(filterStationId != null && filterStationId > 0 ? { filterStationId } : {}),
+          ...(includeInactive ? { includeInactive: true } : {}),
+        },
+      }),
+      transformResponse: normalizeEmployeesPaged,
+      providesTags: ['Employee'],
+    }),
+    getEmployeeById: builder.query<Employee, number>({
+      query: (id) => ({ url: `Employees/${id}` }),
+      transformResponse: normalizeEmployeeRow,
+      providesTags: (_r, _e, id) => [{ type: 'Employee', id }],
+    }),
+    createEmployee: builder.mutation<Employee, EmployeeWriteRequest>({
+      query: (body) => ({ url: 'Employees', method: 'POST', body }),
+      transformResponse: normalizeEmployeeRow,
+      invalidatesTags: ['Employee', 'PayrollReport'],
+    }),
+    updateEmployee: builder.mutation<Employee, { id: number; body: EmployeeWriteRequest }>({
+      query: ({ id, body }) => ({ url: `Employees/${id}`, method: 'PUT', body }),
+      transformResponse: normalizeEmployeeRow,
+      invalidatesTags: (_r, _e, arg) => ['Employee', 'PayrollReport', { type: 'Employee', id: arg.id }],
+    }),
+    deleteEmployee: builder.mutation<Employee, number>({
+      query: (id) => ({ url: `Employees/${id}`, method: 'DELETE' }),
+      transformResponse: normalizeEmployeeRow,
+      invalidatesTags: ['Employee', 'EmployeePayment', 'PayrollReport'],
+    }),
+
+    getEmployeePayments: builder.query<PagedResult<EmployeePayment>, EmployeePaymentsPagedArg>({
+      query: ({ page, pageSize, q, businessId, filterStationId, employeeId, period }) => ({
+        url: 'EmployeePayments',
+        params: {
+          page,
+          pageSize,
+          q,
+          ...(businessId != null && businessId > 0 ? { businessId } : {}),
+          ...(filterStationId != null && filterStationId > 0 ? { filterStationId } : {}),
+          ...(employeeId != null && employeeId > 0 ? { employeeId } : {}),
+          ...(period ? { period } : {}),
+        },
+      }),
+      transformResponse: normalizeEmployeePaymentsPaged,
+      providesTags: ['EmployeePayment'],
+    }),
+    getEmployeePaymentBalance: builder.query<
+      EmployeePaymentPreviewBalance,
+      { employeeId: number; businessId?: number }
+    >({
+      query: ({ employeeId, businessId }) => ({
+        url: 'EmployeePayments/balance',
+        params: {
+          employeeId,
+          ...(businessId != null && businessId > 0 ? { businessId } : {}),
+        },
+      }),
+      transformResponse: normalizeEmployeePaymentPreviewBalance,
+      providesTags: ['EmployeePayment', 'Employee'],
+    }),
+    createEmployeePayment: builder.mutation<EmployeePayment, EmployeePaymentWriteRequest>({
+      query: (body) => ({ url: 'EmployeePayments', method: 'POST', body }),
+      transformResponse: normalizeEmployeePaymentRow,
+      invalidatesTags: ['EmployeePayment', 'Employee', 'PayrollReport'],
+    }),
+    deleteEmployeePayment: builder.mutation<EmployeePayment, number>({
+      query: (id) => ({ url: `EmployeePayments/${id}`, method: 'DELETE' }),
+      transformResponse: normalizeEmployeePaymentRow,
+      invalidatesTags: ['EmployeePayment', 'Employee', 'PayrollReport'],
+    }),
+    runPayroll: builder.mutation<PayrollRunResult, PayrollRunWriteRequest>({
+      query: (body) => ({ url: 'EmployeePayments/payroll-run', method: 'POST', body }),
+      transformResponse: normalizePayrollRunResult,
+      invalidatesTags: ['EmployeePayment', 'Employee', 'PayrollReport'],
+    }),
+
+    getOperationReportEmployees: builder.query<
+      EmployeeOption[],
+      { businessId: number; stationId?: number; period?: string }
+    >({
+      query: ({ businessId, stationId, period }) => ({
+        url: 'OperationReports/employees',
+        params: {
+          businessId,
+          ...(stationId != null && stationId > 0 ? { stationId } : {}),
+          ...(period != null && period.trim().length > 0 ? { period: period.trim() } : {}),
+        },
+      }),
+      transformResponse: (raw: unknown) =>
+        Array.isArray(raw) ? raw.map(normalizeEmployeeOptionRow) : [],
+      providesTags: ['Employee', 'PayrollReport'],
+    }),
+    getPayrollStatusReport: builder.query<
+      PayrollStatusReportDto,
+      { businessId: number; period: string; stationId?: number }
+    >({
+      query: ({ businessId, period, stationId }) => ({
+        url: 'OperationReports/payroll-status',
+        params: {
+          businessId,
+          period,
+          ...(stationId != null && stationId > 0 ? { stationId } : {}),
+        },
+      }),
+      transformResponse: normalizePayrollStatusReportDto,
+      providesTags: ['PayrollReport', 'Employee', 'EmployeePayment'],
+    }),
+    getEmployeePaymentHistoryReport: builder.query<
+      EmployeePaymentHistoryDto,
+      { businessId: number; employeeId: number; from?: string; to?: string }
+    >({
+      query: ({ businessId, employeeId, from, to }) => ({
+        url: 'OperationReports/employee-payment-history',
+        params: {
+          businessId,
+          employeeId,
+          ...(from ? { from } : {}),
+          ...(to ? { to } : {}),
+        },
+      }),
+      transformResponse: normalizeEmployeePaymentHistoryDto,
+      providesTags: ['PayrollReport', 'EmployeePayment', 'Employee'],
+    }),
+
     getPurchases: builder.query<PagedResult<Purchase>, PagedArg>({
       query: ({ page, pageSize, q }) => ({
         url: 'Purchases',
@@ -1320,11 +2003,13 @@ export const apiSlice = createApi({
         url: 'SupplierPayments',
         params: { page, pageSize, q, ...(businessId != null && businessId > 0 ? { businessId } : {}) },
       }),
+      transformResponse: normalizeSupplierPaymentsPaged,
       providesTags: ['SupplierPayment'],
     }),
     createSupplierPayment: builder.mutation<SupplierPayment, SupplierPaymentWriteRequest>({
       query: (body) => ({ url: 'SupplierPayments', method: 'POST', body }),
-      invalidatesTags: ['SupplierPayment'],
+      transformResponse: normalizeSupplierPaymentRow,
+      invalidatesTags: ['SupplierPayment', 'SupplierReport'],
     }),
     getPurchase: builder.query<PurchaseWithItems, number>({
       query: (id) => ({ url: `Purchases/${id}` }),
@@ -1334,12 +2019,12 @@ export const apiSlice = createApi({
     createPurchase: builder.mutation<PurchaseWithItems, PurchaseWriteRequest>({
       query: (body) => ({ url: 'Purchases', method: 'POST', body }),
       transformResponse: normalizePurchaseWithItems,
-      invalidatesTags: ['Purchase', 'SupplierPayment'],
+      invalidatesTags: ['Purchase', 'SupplierPayment', 'SupplierReport'],
     }),
     updatePurchase: builder.mutation<PurchaseWithItems, { id: number; body: PurchaseHeaderWriteRequest }>({
       query: ({ id, body }) => ({ url: `Purchases/${id}`, method: 'PUT', body }),
       transformResponse: normalizePurchaseWithItems,
-      invalidatesTags: (_r, _e, arg) => ['Purchase', 'SupplierPayment', { type: 'Purchase', id: arg.id }],
+      invalidatesTags: (_r, _e, arg) => ['Purchase', 'SupplierPayment', 'SupplierReport', { type: 'Purchase', id: arg.id }],
     }),
     addPurchaseItem: builder.mutation<PurchaseWithItems, { purchaseId: number; body: PurchaseLineWrite }>({
       query: ({ purchaseId, body }) => ({
@@ -1348,7 +2033,7 @@ export const apiSlice = createApi({
         body,
       }),
       transformResponse: normalizePurchaseWithItems,
-      invalidatesTags: (_r, _e, arg) => ['Purchase', { type: 'Purchase', id: arg.purchaseId }],
+      invalidatesTags: (_r, _e, arg) => ['Purchase', 'SupplierPayment', 'SupplierReport', { type: 'Purchase', id: arg.purchaseId }],
     }),
     updatePurchaseItem: builder.mutation<
       PurchaseWithItems,
@@ -1360,7 +2045,7 @@ export const apiSlice = createApi({
         body,
       }),
       transformResponse: normalizePurchaseWithItems,
-      invalidatesTags: (_r, _e, arg) => ['Purchase', { type: 'Purchase', id: arg.purchaseId }],
+      invalidatesTags: (_r, _e, arg) => ['Purchase', 'SupplierPayment', 'SupplierReport', { type: 'Purchase', id: arg.purchaseId }],
     }),
     deletePurchaseItem: builder.mutation<PurchaseWithItems, { purchaseId: number; itemId: number }>({
       query: ({ purchaseId, itemId }) => ({
@@ -1368,11 +2053,11 @@ export const apiSlice = createApi({
         method: 'DELETE',
       }),
       transformResponse: normalizePurchaseWithItems,
-      invalidatesTags: (_r, _e, arg) => ['Purchase', { type: 'Purchase', id: arg.purchaseId }],
+      invalidatesTags: (_r, _e, arg) => ['Purchase', 'SupplierPayment', 'SupplierReport', { type: 'Purchase', id: arg.purchaseId }],
     }),
     deletePurchase: builder.mutation<void, number>({
       query: (id) => ({ url: `Purchases/${id}`, method: 'DELETE' }),
-      invalidatesTags: ['Purchase'],
+      invalidatesTags: ['Purchase', 'SupplierPayment', 'SupplierReport'],
     }),
   }),
 })
@@ -1438,6 +2123,9 @@ export const {
   useGetRatesQuery,
   useGetGeneratorUsagesQuery,
   useGetCustomerFuelGivensQuery,
+  useGetCustomerFuelGivenCustomersQuery,
+  useGetCustomerFuelGivenCustomerByIdQuery,
+  useGetCustomerFuelGivenTransactionsByCustomerQuery,
   useGetOutstandingCustomerFuelGivensQuery,
   useGetAccountsQuery,
   useGetAccountParentCandidatesQuery,
@@ -1456,6 +2144,7 @@ export const {
   usePatchJournalEntryDescriptionMutation,
   useGetCustomerPaymentsQuery,
   useGetCustomerPaymentPreviewBalanceQuery,
+  useGetCustomerPaymentBalanceQuery,
   useCreateCustomerPaymentMutation,
   useDeleteCustomerPaymentMutation,
   useGetTrialBalanceReportQuery,
@@ -1483,6 +2172,10 @@ export const {
   useGetDailySummaryReportQuery,
   useGetDailyFuelGivenReportQuery,
   useGetDailyStationReportQuery,
+  useGetSupplierReportQuery,
+  useGetSupplierPaymentBalanceQuery,
+  useGetCustomerReportQuery,
+  useGetOperationReportCustomersQuery,
   useCreateExpenseMutation,
   useUpdateExpenseMutation,
   useDeleteExpenseMutation,
@@ -1499,6 +2192,9 @@ export const {
   useUpdateGeneratorUsageMutation,
   useDeleteGeneratorUsageMutation,
   useCreateCustomerFuelGivenMutation,
+  useCreateCustomerFuelGivenCustomerMutation,
+  useUpdateCustomerFuelGivenCustomerMutation,
+  useDeleteCustomerFuelGivenCustomerMutation,
   useUpdateCustomerFuelGivenMutation,
   useDeleteCustomerFuelGivenMutation,
   useCreatePumpMutation,
@@ -1540,6 +2236,19 @@ export const {
   useCreateSupplierMutation,
   useUpdateSupplierMutation,
   useDeleteSupplierMutation,
+  useGetEmployeesQuery,
+  useGetEmployeeByIdQuery,
+  useCreateEmployeeMutation,
+  useUpdateEmployeeMutation,
+  useDeleteEmployeeMutation,
+  useGetEmployeePaymentsQuery,
+  useGetEmployeePaymentBalanceQuery,
+  useCreateEmployeePaymentMutation,
+  useDeleteEmployeePaymentMutation,
+  useRunPayrollMutation,
+  useGetOperationReportEmployeesQuery,
+  useGetPayrollStatusReportQuery,
+  useGetEmployeePaymentHistoryReportQuery,
   useGetPurchasesQuery,
   useGetSupplierPaymentsQuery,
   useCreateSupplierPaymentMutation,

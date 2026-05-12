@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   AlertCircle,
   BarChart2,
   Banknote,
   Beaker,
+  Briefcase,
   Building2,
   ChevronDown,
   ChevronRight,
@@ -77,6 +78,26 @@ const MANAGEMENT_CHILDREN: FlyoutItem[] = [
   { to: '/supplier-payments', label: 'Supplier payments', icon: Banknote },
 ]
 
+const EMPLOYEES_CHILDREN: FlyoutItem[] = [
+  { to: '/employees', label: 'Employees', icon: Users },
+  { to: '/reports/payroll-paid', label: 'Paid employees', icon: FileText },
+  { to: '/reports/payroll-unpaid', label: 'Unpaid employees', icon: FileText },
+  { to: '/reports/employee-payment-history', label: 'Employee payment history', icon: ClipboardList },
+]
+
+/** Routes that live under Reports URLs but are grouped under Employees in the sidebar. */
+const EMPLOYEES_SECTION_PATH_PREFIXES = [
+  '/employees',
+  '/reports/payroll-paid',
+  '/reports/payroll-unpaid',
+  '/reports/employee-payment-history',
+] as const
+
+const PAYROLLS_CHILDREN: FlyoutItem[] = [
+  { to: '/payrolls', label: 'Record payment', icon: Banknote },
+  { to: '/payrolls/runs', label: 'Payroll runs', icon: CalendarRange },
+]
+
 const ADMINISTRATION_CHILDREN: FlyoutItem[] = [
   { to: '/setup/users', label: 'Users', icon: Users },
   { to: '/setup/business-users', label: 'Assigning Station', icon: UserSquare2 },
@@ -117,6 +138,8 @@ const REPORTS_CHILDREN: FlyoutItem[] = [
   { to: '/reports/general-daily', label: 'General daily report', icon: FileText },
   { to: '/reports/inventory-daily', label: 'Inventory daily', icon: FileText },
   { to: '/reports/daily-station', label: 'Daily station report', icon: FileText },
+  { to: '/reports/supplier', label: 'Supplier report', icon: FileText },
+  { to: '/reports/customer', label: 'Customer report', icon: FileText },
   { to: '/reports/outstanding-customers', label: 'Outstanding customers', icon: AlertCircle },
 ]
 
@@ -169,6 +192,8 @@ export function Sidebar({
     () => MANAGEMENT_CHILDREN.filter((c) => managementNavItemAllowed(c.to, linkAllowed)),
     [linkAllowed],
   )
+  const employeesChildren = useMemo(() => EMPLOYEES_CHILDREN.filter((c) => linkAllowed(c.to)), [linkAllowed])
+  const payrollsChildren = useMemo(() => PAYROLLS_CHILDREN.filter((c) => linkAllowed(c.to)), [linkAllowed])
   const administrationChildren = useMemo(
     () => ADMINISTRATION_CHILDREN.filter((c) => linkAllowed(c.to)),
     [linkAllowed],
@@ -201,6 +226,8 @@ export function Sidebar({
   const [accountingOpen, setAccountingOpen] = useState(false)
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [managementOpen, setManagementOpen] = useState(false)
+  const [employeesOpen, setEmployeesOpen] = useState(false)
+  const [payrollsOpen, setPayrollsOpen] = useState(false)
   const [administrationOpen, setAdministrationOpen] = useState(false)
   const [financialReportsOpen, setFinancialReportsOpen] = useState(false)
   const [hoverSetup, setHoverSetup] = useState(false)
@@ -208,6 +235,8 @@ export function Sidebar({
   const [hoverAccounting, setHoverAccounting] = useState(false)
   const [hoverOperations, setHoverOperations] = useState(false)
   const [hoverManagement, setHoverManagement] = useState(false)
+  const [hoverEmployees, setHoverEmployees] = useState(false)
+  const [hoverPayrolls, setHoverPayrolls] = useState(false)
   const [hoverAdministration, setHoverAdministration] = useState(false)
   const [hoverFinancialReports, setHoverFinancialReports] = useState(false)
   const setupLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -215,6 +244,8 @@ export function Sidebar({
   const accountingLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
   const operationsLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
   const managementLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const employeesLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const payrollsLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
   const administrationLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
   const financialReportsLeaveT = useRef<ReturnType<typeof setTimeout> | null>(null)
   const setupAnchorRef = useRef<HTMLButtonElement>(null)
@@ -222,6 +253,8 @@ export function Sidebar({
   const accountingAnchorRef = useRef<HTMLButtonElement>(null)
   const operationsAnchorRef = useRef<HTMLButtonElement>(null)
   const managementAnchorRef = useRef<HTMLButtonElement>(null)
+  const employeesAnchorRef = useRef<HTMLButtonElement>(null)
+  const payrollsAnchorRef = useRef<HTMLButtonElement>(null)
   const administrationAnchorRef = useRef<HTMLButtonElement>(null)
   const financialReportsAnchorRef = useRef<HTMLButtonElement>(null)
   const clearSetupTimer = () => {
@@ -300,6 +333,36 @@ export function Sidebar({
     managementLeaveT.current = setTimeout(() => setHoverManagement(false), 220)
   }, [])
 
+  const clearEmployeesTimer = () => {
+    if (employeesLeaveT.current) {
+      clearTimeout(employeesLeaveT.current)
+      employeesLeaveT.current = null
+    }
+  }
+  const enterEmployees = useCallback(() => {
+    clearEmployeesTimer()
+    setHoverEmployees(true)
+  }, [])
+  const leaveEmployees = useCallback(() => {
+    clearEmployeesTimer()
+    employeesLeaveT.current = setTimeout(() => setHoverEmployees(false), 220)
+  }, [])
+
+  const clearPayrollsTimer = () => {
+    if (payrollsLeaveT.current) {
+      clearTimeout(payrollsLeaveT.current)
+      payrollsLeaveT.current = null
+    }
+  }
+  const enterPayrolls = useCallback(() => {
+    clearPayrollsTimer()
+    setHoverPayrolls(true)
+  }, [])
+  const leavePayrolls = useCallback(() => {
+    clearPayrollsTimer()
+    payrollsLeaveT.current = setTimeout(() => setHoverPayrolls(false), 220)
+  }, [])
+
   const clearAdministrationTimer = () => {
     if (administrationLeaveT.current) {
       clearTimeout(administrationLeaveT.current)
@@ -337,9 +400,19 @@ export function Sidebar({
     setAccountingOpen(false)
     setOperationsOpen(false)
     setManagementOpen(false)
+    setEmployeesOpen(false)
+    setPayrollsOpen(false)
     setAdministrationOpen(false)
     setFinancialReportsOpen(false)
   }, [])
+
+  useEffect(() => {
+    const p = location.pathname
+    const showEmployeesFlyout = EMPLOYEES_SECTION_PATH_PREFIXES.some(
+      (prefix) => p === prefix || p.startsWith(`${prefix}/`),
+    )
+    if (showEmployeesFlyout) setEmployeesOpen(true)
+  }, [location.pathname])
 
   const toggleOnlyMenu = useCallback(
     (
@@ -349,6 +422,8 @@ export function Sidebar({
         | 'accounting'
         | 'operations'
         | 'management'
+        | 'employees'
+        | 'payrolls'
         | 'administration'
         | 'financialReports',
     ) => {
@@ -358,6 +433,8 @@ export function Sidebar({
         (menu === 'accounting' && accountingOpen) ||
         (menu === 'operations' && operationsOpen) ||
         (menu === 'management' && managementOpen) ||
+        (menu === 'employees' && employeesOpen) ||
+        (menu === 'payrolls' && payrollsOpen) ||
         (menu === 'administration' && administrationOpen) ||
         (menu === 'financialReports' && financialReportsOpen)
 
@@ -368,6 +445,8 @@ export function Sidebar({
         if (menu === 'accounting') setAccountingOpen(true)
         if (menu === 'operations') setOperationsOpen(true)
         if (menu === 'management') setManagementOpen(true)
+        if (menu === 'employees') setEmployeesOpen(true)
+        if (menu === 'payrolls') setPayrollsOpen(true)
         if (menu === 'administration') setAdministrationOpen(true)
         if (menu === 'financialReports') setFinancialReportsOpen(true)
       }
@@ -376,9 +455,11 @@ export function Sidebar({
       accountingOpen,
       administrationOpen,
       closeAllMenus,
+      employeesOpen,
       financialReportsOpen,
       managementOpen,
       operationsOpen,
+      payrollsOpen,
       reportsOpen,
       setupOpen,
     ],
@@ -528,6 +609,117 @@ export function Sidebar({
                     to === '/transfers' ||
                     to === '/transfer-audit-trail'
                   }
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',
+                      isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white',
+                    )
+                  }
+                >
+                  <Icon className="h-4 w-4 shrink-0 opacity-80" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          )}
+        </div>
+        ) : null}
+
+        {employeesChildren.length > 0 ? (
+        <div className="relative overflow-visible" onMouseEnter={enterEmployees} onMouseLeave={leaveEmployees}>
+          <button
+            ref={employeesAnchorRef}
+            type="button"
+            onClick={() => !collapsed && toggleOnlyMenu('employees')}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
+          >
+            <Briefcase className="h-5 w-5 shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="flex-1">Employees</span>
+                {employeesOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0" />
+                )}
+              </>
+            )}
+          </button>
+
+          {collapsed && (
+            <CollapsedFlyoutMenu
+              open={hoverEmployees}
+              title="Employees"
+              items={employeesChildren}
+              anchorRef={employeesAnchorRef}
+              onRequestClose={() => setHoverEmployees(false)}
+              onMouseEnter={enterEmployees}
+              onMouseLeave={leaveEmployees}
+            />
+          )}
+
+          {!collapsed && employeesOpen && (
+            <div className="ml-2 mt-1 space-y-0.5 border-l border-slate-700 pl-2">
+              {employeesChildren.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',
+                      isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white',
+                    )
+                  }
+                >
+                  <Icon className="h-4 w-4 shrink-0 opacity-80" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          )}
+        </div>
+        ) : null}
+
+        {payrollsChildren.length > 0 ? (
+        <div className="relative overflow-visible" onMouseEnter={enterPayrolls} onMouseLeave={leavePayrolls}>
+          <button
+            ref={payrollsAnchorRef}
+            type="button"
+            onClick={() => !collapsed && toggleOnlyMenu('payrolls')}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-slate-800"
+          >
+            <Wallet className="h-5 w-5 shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="flex-1">Payrolls</span>
+                {payrollsOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0" />
+                )}
+              </>
+            )}
+          </button>
+
+          {collapsed && (
+            <CollapsedFlyoutMenu
+              open={hoverPayrolls}
+              title="Payrolls"
+              items={payrollsChildren}
+              anchorRef={payrollsAnchorRef}
+              onRequestClose={() => setHoverPayrolls(false)}
+              onMouseEnter={enterPayrolls}
+              onMouseLeave={leavePayrolls}
+            />
+          )}
+
+          {!collapsed && payrollsOpen && (
+            <div className="ml-2 mt-1 space-y-0.5 border-l border-slate-700 pl-2">
+              {payrollsChildren.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === '/payrolls'}
                   className={({ isActive }) =>
                     cn(
                       'flex items-center gap-2 rounded-lg px-2 py-2 text-sm',

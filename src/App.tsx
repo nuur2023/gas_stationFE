@@ -11,6 +11,7 @@ import { InventorySalesPage } from './pages/operations/InventorySalesPage'
 import { InventorySaleDetailPage } from './pages/operations/InventorySaleDetailPage'
 import { GeneratorUsagePage } from './pages/operations/GeneratorUsagePage'
 import { CustomerFuelGivensPage } from './pages/operations/CustomerFuelGivensPage'
+import { CustomerFuelGivenDetailsPage } from './pages/operations/CustomerFuelGivenDetailsPage'
 import { LiterReceivedsPage } from './pages/operations/LiterReceivedsPage'
 import { LiterReceivedReportPage } from './pages/reports/LiterReceivedReportPage'
 import { CashOutDailyReportPage } from './pages/reports/CashOutDailyReportPage'
@@ -21,6 +22,8 @@ import { GeneralDailyReportPage } from './pages/reports/GeneralDailyReportPage'
 import { InventoryDailyReportPage } from './pages/reports/InventoryDailyReportPage'
 import { OutstandingCustomersReportPage } from './pages/reports/OutstandingCustomersReportPage'
 import { DailyStationReportPage } from './pages/reports/DailyStationReportPage'
+import { SupplierReportPage } from './pages/reports/SupplierReportPage'
+import { CustomerReportPage } from './pages/reports/CustomerReportPage'
 import { FinancialReportsPage } from './pages/reports/FinancialReportsPage'
 import {
   CashOrUsdTakenReportPage,
@@ -61,6 +64,12 @@ import { TransferFuelsPage } from './pages/fuel-inventory/TransferFuelsPage'
 import { TransferAuditTrailPage } from './pages/fuel-inventory/TransferAuditTrailPage'
 import { NoPermissionsPage } from './pages/NoPermissionsPage'
 import { LEGACY_FINANCIAL_KIND_TO_PATH } from './lib/financialReportRoutes'
+import { EmployeesPage } from './pages/payroll/EmployeesPage'
+import { EmployeeDetailsPage } from './pages/payroll/EmployeeDetailsPage'
+import { EmployeePaymentsPage } from './pages/payroll/EmployeePaymentsPage'
+import { PayrollRunsPage } from './pages/payroll/PayrollRunsPage'
+import { PayrollStatusReportPage } from './pages/reports/PayrollStatusReportPage'
+import { EmployeePaymentHistoryReportPage } from './pages/reports/EmployeePaymentHistoryReportPage'
 
 function LegacyFinancialReportsRedirect() {
   const [searchParams] = useSearchParams()
@@ -102,6 +111,7 @@ export function App() {
               <Route path="rates" element={<RatesPage />} />
               <Route path="generator-usage" element={<GeneratorUsagePage />} />
               <Route path="customer-fuel-givens" element={<CustomerFuelGivensPage />} />
+              <Route path="customer-fuel-givens/:id" element={<CustomerFuelGivenDetailsPage />} />
               <Route path="accounting" element={<Navigate to="/accounting/accounts" replace />} />
               <Route path="accounting/accounts" element={<ChartOfAccountsPage />} />
               <Route path="accounting/charts-of-accounts" element={<ChartsOfAccountsPage />} />
@@ -140,7 +150,12 @@ export function App() {
               <Route path="reports/general-daily" element={<GeneralDailyReportPage />} />
               <Route path="reports/inventory-daily" element={<InventoryDailyReportPage />} />
               <Route path="reports/daily-station" element={<DailyStationReportPage />} />
+              <Route path="reports/supplier" element={<SupplierReportPage />} />
+              <Route path="reports/customer" element={<CustomerReportPage />} />
               <Route path="reports/outstanding-customers" element={<OutstandingCustomersReportPage />} />
+              <Route path="reports/payroll-paid" element={<PayrollStatusReportPage mode="paid" />} />
+              <Route path="reports/payroll-unpaid" element={<PayrollStatusReportPage mode="unpaid" />} />
+              <Route path="reports/employee-payment-history" element={<EmployeePaymentHistoryReportPage />} />
               <Route path="reports/financial" element={<LegacyFinancialReportsRedirect />} />
               <Route path="financial-reports/trial-balance" element={<FinancialReportsPage />} />
               <Route
@@ -172,6 +187,10 @@ export function App() {
               <Route path="operations/generator-usage" element={<Navigate to="/generator-usage" replace />} />
               <Route path="operations/fuel-types" element={<Navigate to="/fuel-types" replace />} />
               <Route path="operations/pumps" element={<Navigate to="/pumps" replace />} />
+              <Route path="employees" element={<EmployeesPage />} />
+              <Route path="employees/:id" element={<EmployeeDetailsPage />} />
+              <Route path="payrolls" element={<EmployeePaymentsPage />} />
+              <Route path="payrolls/runs" element={<PayrollRunsPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

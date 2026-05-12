@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   useCreateSupplierPaymentMutation,
   useGetBusinessesQuery,
+  useGetSupplierPaymentBalanceQuery,
   useGetSupplierPaymentsQuery,
   useGetSuppliersQuery,
 } from '../../app/api/apiSlice'
@@ -39,7 +40,6 @@ export function SupplierPaymentsPage() {
   const [open, setOpen] = useState(false)
   const [formBusinessId, setFormBusinessId] = useState<number | null>(null)
   const [supplierId, setSupplierId] = useState(0)
-  const [referenceNo, setReferenceNo] = useState('')
   const [amount, setAmount] = useState('')
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
 
@@ -95,6 +95,22 @@ export function SupplierPaymentsPage() {
     return items.map((s) => ({ value: String(s.id), label: s.name }))
   }, [isSuperAdmin, formBusinessId, suppliersAll?.items, suppliersScoped?.items])
 
+  const needsBusiness = showBizPicker ? formBusinessId == null || formBusinessId <= 0 : authBusinessId == null
+
+  const balanceBusinessId =
+    showBizPicker ? (formBusinessId ?? undefined) : (authBusinessId ?? undefined)
+  const { data: balancePreview } = useGetSupplierPaymentBalanceQuery(
+    { supplierId, businessId: balanceBusinessId },
+    {
+      skip:
+        !open ||
+        needsBusiness ||
+        supplierId <= 0 ||
+        balanceBusinessId == null ||
+        balanceBusinessId <= 0,
+    },
+  )
+
   const rows = data?.items ?? []
   const total = data?.totalCount ?? 0
 
@@ -112,10 +128,27 @@ export function SupplierPaymentsPage() {
         render: (r) => supplierNameById.get(r.supplierId) ?? `#${r.supplierId}`,
       },
       {
-        key: 'amount',
-        header: 'Amount',
+        key: 'description',
+        header: 'Description',
+        render: (r) => (r.description?.trim() ? r.description : '—'),
+      },
+      {
+        key: 'chargedAmount',
+        header: 'Charged',
         align: 'right',
-        render: (r) => formatDecimal(r.amount ?? 0),
+        render: (r) => formatDecimal(r.chargedAmount ?? 0),
+      },
+      {
+        key: 'paidAmount',
+        header: 'Paid',
+        align: 'right',
+        render: (r) => formatDecimal(r.paidAmount ?? 0),
+      },
+      {
+        key: 'balance',
+        header: 'Balance',
+        align: 'right',
+        render: (r) => formatDecimal(r.balance ?? 0),
       },
       {
         key: 'date',
@@ -138,7 +171,6 @@ export function SupplierPaymentsPage() {
   function openPaymentModal() {
     setOpen(true)
     setSupplierId(0)
-    setReferenceNo('')
     setAmount('')
     setPaymentDate(new Date().toISOString().slice(0, 10))
     if (showBizPicker) {
@@ -152,7 +184,6 @@ export function SupplierPaymentsPage() {
     if (!saving) setOpen(false)
   }
 
-  const needsBusiness = showBizPicker ? formBusinessId == null || formBusinessId <= 0 : authBusinessId == null
   const amountNum = Number.parseFloat(String(amount).replace(',', '.'))
   const canSubmit =
     !needsBusiness &&
@@ -168,7 +199,6 @@ export function SupplierPaymentsPage() {
       supplierId,
       amount: String(amountNum),
       date: new Date(paymentDate + 'T12:00:00').toISOString(),
-      referenceNo: referenceNo.trim() || undefined,
       ...(showBizPicker && formBusinessId != null ? { businessId: formBusinessId } : {}),
     }
     try {
@@ -216,7 +246,7 @@ export function SupplierPaymentsPage() {
               </button>
             ) : null}
             {isSuperAdmin ? (
-              <div className="min-w-0 flex-1 sm:min-w-[14rem] sm:max-w-xs lg:w-64 lg:max-w-none">
+              <div className="min-w-0 flex-1 sm:min-w-56 sm:max-w-xs lg:w-64 lg:max-w-none">
                 <FormSelect
                   options={businessOptions}
                   value={businessOptions.find((o) => o.value === String(filterBusinessId ?? '')) ?? null}
@@ -231,7 +261,7 @@ export function SupplierPaymentsPage() {
             ) : null}
           </div>
         }
-        emptyMessage="No supplier payments yet. They are created when you save a purchase as Half-paid or Paid with an amount paid, or use Payments to add one."
+        emptyMessage="No supplier payments yet. Saving a purchase creates a Purchased charge; use Payments to record money paid to the supplier."
       />
 
       <Modal open={open} onClose={closeModal} title="Record supplier payment" className="max-w-md">
@@ -263,18 +293,17 @@ export function SupplierPaymentsPage() {
               isDisabled={needsBusiness || supplierOptions.length === 0 || saving}
             />
           </div>
+          {!needsBusiness && supplierId > 0 && balancePreview != null && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-sm text-emerald-950">
+              <p className="font-semibold">Current balance owed</p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-900">
+                {formatDecimal(balancePreview.balance)}
+              </p>
+              <p className="mt-1 text-xs text-emerald-800">After you save, balances are recalculated for this supplier.</p>
+            </div>
+          )}
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Reference (optional)</label>
-            <input
-              value={referenceNo}
-              onChange={(e) => setReferenceNo(e.target.value)}
-              disabled={saving}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-emerald-500/30 focus:ring-2 disabled:bg-slate-50"
-              placeholder="Invoice or receipt #"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Amount</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Paid amount</label>
             <input
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -283,6 +312,9 @@ export function SupplierPaymentsPage() {
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-emerald-500/30 focus:ring-2 disabled:bg-slate-50"
               placeholder="0.00"
             />
+            <p className="mt-1 text-xs text-slate-500">
+              Reference is generated automatically (e.g. SP-1-20260508-0001). This entry is recorded as Description: Payment.
+            </p>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Date</label>

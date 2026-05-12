@@ -48,6 +48,7 @@ export function ExpensesPage({
   const location = useLocation()
   const resolvedSideAction: ExpenseSideAction =
     sideAction ?? (location.pathname.startsWith('/management/') ? 'Management' : 'Operation')
+  const isManagementSide = resolvedSideAction === 'Management'
   const isExchangePage = expenseKind === 'Exchange'
   const isCashOrUsdTakenPage = expenseKind === 'cashOrUsdTaken'
   const pageTitle = isExchangePage ? 'Exchange' : isCashOrUsdTakenPage ? 'Cash or USD Taken' : 'Expenses'
@@ -70,7 +71,9 @@ export function ExpensesPage({
     q: debounced || undefined,
     type: expenseKind,
     sideAction: resolvedSideAction,
-    ...(effectiveStationId != null && effectiveStationId > 0
+    // Management entries are stored with NULL StationId, so we never filter by station for them —
+    // otherwise the workspace station scope would hide every row.
+    ...(!isManagementSide && effectiveStationId != null && effectiveStationId > 0
       ? { filterStationId: effectiveStationId }
       : {}),
   })
@@ -109,11 +112,11 @@ export function ExpensesPage({
     type: expenseKind,
     sideAction: resolvedSideAction,
     description: '',
-    currencyCode: 'USD',
+    currencyId: 0,
     localAmount: '0',
     rate: '0',
     amountUsd: '0',
-    stationId: 0,
+    stationId: isManagementSide ? null : 0,
   })
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [localAmountFocused, setLocalAmountFocused] = useState(false)
@@ -143,7 +146,7 @@ export function ExpensesPage({
   )
 
   const businessSel = businessOptions.find((o) => o.value === String(formBusinessId ?? '')) ?? null
-  const stationSel = stationOptionsBase.find((o) => o.value === String(form.stationId)) ?? null
+  const stationSel = stationOptionsBase.find((o) => o.value === String(form.stationId ?? '')) ?? null
 
   const userNameById = useMemo(() => {
     const m = new Map<number, string>()
@@ -189,28 +192,22 @@ export function ExpensesPage({
     for (const c of currencies) m.set(c.id, { code: c.code.toUpperCase(), symbol: c.symbol })
     return m
   }, [currencies])
-  const currencyOptionsByStation = useMemo(() => {
-    const m = new Map<string, SelectOption[]>()
-    for (const fp of fuelPrices) {
-      const c = currencyById.get(fp.currencyId)
-      if (!c) continue
-      const k = `${fp.businessId}:${fp.stationId}`
-      const existing = m.get(k) ?? []
-      if (!existing.some((x) => x.value === c.code)) {
-        existing.push({ value: c.code, label: `${c.code} (${c.symbol})` })
-        m.set(k, existing)
-      }
-    }
-    return m
-  }, [fuelPrices, currencyById])
-  const selectedStationId = resolveFormStationId(role, form.stationId, effectiveStationId)
-  const currencyOptionsForForm = useMemo(() => {
-    const key = `${effectiveFormBusinessId ?? 0}:${selectedStationId}`
-    const fromFuelPrices = currencyOptionsByStation.get(key) ?? []
-    if (fromFuelPrices.length > 0) return fromFuelPrices
-    return currencies.map((c) => ({ value: c.code.toUpperCase(), label: `${c.code.toUpperCase()} (${c.symbol})` }))
-  }, [currencyOptionsByStation, effectiveFormBusinessId, selectedStationId, currencies])
-  const currencySel = currencyOptionsForForm.find((o) => o.value === form.currencyCode) ?? null
+  /** All currencies from setup (Currencies API), same as Management → Currencies. */
+  const currencyOptionsForForm = useMemo(
+    () =>
+      [...currencies]
+        .sort((a, b) => a.code.localeCompare(b.code))
+        .map((c) => ({ value: String(c.id), label: `${c.code.trim().toUpperCase()} (${c.symbol})` })),
+    [currencies],
+  )
+  const preferredDefaultCurrencyId = useMemo(() => {
+    const ssp = currencies.find((c) => c.code.trim().toUpperCase() === 'SSP')
+    if (ssp && currencyOptionsForForm.some((o) => Number(o.value) === ssp.id)) return ssp.id
+    const first = Number(currencyOptionsForForm[0]?.value)
+    return Number.isFinite(first) && first > 0 ? first : 0
+  }, [currencies, currencyOptionsForForm])
+  const currencySel = currencyOptionsForForm.find((o) => Number(o.value) === form.currencyId) ?? null
+  const formCurrencyCode = (currencyById.get(form.currencyId)?.code ?? '').trim().toUpperCase()
 
   const activeRateStr = useMemo(() => {
     if (effectiveFormBusinessId == null || effectiveFormBusinessId <= 0) return null
@@ -222,23 +219,26 @@ export function ExpensesPage({
   }, [ratesData, effectiveFormBusinessId])
 
   useEffect(() => {
+    if (isManagementSide) return
     if (!open || !showStationPicker || formBusinessId == null || formBusinessId <= 0) return
     const items = stationsForForm?.items ?? []
     if (items.length === 0) return
     setForm((f) => {
-      if (items.some((s) => s.id === f.stationId)) return f
+      const sid = f.stationId ?? 0
+      if (sid > 0 && items.some((s) => s.id === sid)) return f
       return { ...f, stationId: items[0].id }
     })
-  }, [open, showStationPicker, formBusinessId, stationsForForm?.items])
+  }, [open, showStationPicker, formBusinessId, stationsForForm?.items, isManagementSide])
 
   useEffect(() => {
+    if (isManagementSide) return
     if (!open || showStationPicker) return
     const sid = effectiveStationId != null && effectiveStationId > 0 ? effectiveStationId : 0
     setForm((f) => (f.stationId === sid ? f : { ...f, stationId: sid }))
-  }, [open, showStationPicker, effectiveStationId])
+  }, [open, showStationPicker, effectiveStationId, isManagementSide])
 
   const needsBusiness = showBizPicker ? formBusinessId == null || formBusinessId <= 0 : authBusinessId == null || authBusinessId <= 0
-  const needsWorkspaceStation = adminNeedsSettingsStation(role, effectiveStationId)
+  const needsWorkspaceStation = !isManagementSide && adminNeedsSettingsStation(role, effectiveStationId)
 
   const localInputValue = useMemo(() => {
     if (localAmountFocused) return form.localAmount
@@ -286,32 +286,52 @@ export function ExpensesPage({
   }
 
   const canSave = useMemo(() => {
-    const stationId = resolveFormStationId(role, form.stationId, effectiveStationId)
-    if (needsBusiness || needsWorkspaceStation || stationId <= 0) return false
+    if (needsBusiness || needsWorkspaceStation) return false
+    if (!isManagementSide) {
+      const stationId = resolveFormStationId(role, form.stationId ?? 0, effectiveStationId)
+      if (stationId <= 0) return false
+    }
     const local = parseNumericInput(form.localAmount)
     const rate = parseNumericInput(form.rate)
     const usd = parseNumericInput(form.amountUsd)
-    if (!(form.description.trim().length > 0 && form.currencyCode.trim().length === 3 && Number.isFinite(local) && local > 0)) {
+    if (!(form.description.trim().length > 0 && form.currencyId > 0 && Number.isFinite(local) && local > 0)) {
       return false
     }
     if (formTab === 'exchange') {
+      const isUsd = formCurrencyCode === 'USD'
+      if (isUsd) return Number.isFinite(usd) && usd >= 0
       return Number.isFinite(rate) && rate > 0 && Number.isFinite(usd) && usd >= 0
     }
     return true
-  }, [needsBusiness, needsWorkspaceStation, role, effectiveStationId, form.stationId, form.localAmount, form.rate, form.amountUsd, form.description, form.currencyCode, formTab])
+  }, [
+    needsBusiness,
+    needsWorkspaceStation,
+    isManagementSide,
+    role,
+    effectiveStationId,
+    form.stationId,
+    form.localAmount,
+    form.rate,
+    form.amountUsd,
+    form.description,
+    form.currencyId,
+    formTab,
+    formCurrencyCode,
+  ])
 
   /** Re-apply auto USD when local or rate changes (Exchange tab manual override is dropped). */
   useEffect(() => {
     exchangeUsdManualRef.current = false
   }, [form.localAmount, form.rate])
 
-  /** Keep Amount USD = local ÷ rate, rounded to 2 decimals (Expense always; Exchange unless user is editing USD). */
+  /** Keep Amount USD = local ÷ rate when not USD currency (Expense always; Exchange unless user is editing USD). */
   useEffect(() => {
     if (!open || amountUsdFocused) return
+    if (formCurrencyCode === 'USD') return
     if (formTab === 'exchange' && exchangeUsdManualRef.current) return
     const next = usdFromLocalOverRateRounded2(computedUsd)
     setForm((f) => (f.amountUsd === next ? f : { ...f, amountUsd: next }))
-  }, [computedUsd, amountUsdFocused, open, formTab])
+  }, [computedUsd, amountUsdFocused, open, formTab, formCurrencyCode])
 
   /** When business context changes (new row or different business), apply active rate if any; else allow manual rate. */
   useEffect(() => {
@@ -337,15 +357,16 @@ export function ExpensesPage({
     if (showBizPicker) {
       setFormBusinessId(null)
     }
-    const defaultSt =
-      effectiveStationId != null && effectiveStationId > 0
+    const defaultSt = isManagementSide
+      ? null
+      : effectiveStationId != null && effectiveStationId > 0
         ? effectiveStationId
         : stationsForForm?.items[0]?.id ?? 0
     setForm({
       type: expenseKind,
       sideAction: resolvedSideAction,
       description: '',
-      currencyCode: currencyOptionsForForm[0]?.value ?? 'USD',
+      currencyId: preferredDefaultCurrencyId,
       localAmount: '0',
       rate: '0',
       amountUsd: '0',
@@ -369,11 +390,11 @@ export function ExpensesPage({
       type: expenseKind,
       sideAction: resolvedSideAction,
       description: row.description,
-      currencyCode: (row.currencyCode ?? 'USD').toUpperCase(),
+      currencyId: row.currencyId > 0 ? row.currencyId : preferredDefaultCurrencyId,
       localAmount: String(row.localAmount),
       rate: String(row.rate),
       amountUsd: String(row.amountUsd),
-      stationId: row.stationId,
+      stationId: isManagementSide ? null : row.stationId ?? 0,
     })
     setRecordDate(row.date ? row.date.slice(0, 10) : new Date().toISOString().slice(0, 10))
     setOpen(true)
@@ -382,17 +403,17 @@ export function ExpensesPage({
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!canSave) return
-    const isUsdCurrency = form.currencyCode.trim().toUpperCase() === 'USD'
-    const isExchangeEntry = formTab === 'exchange'
+    const resolvedStationId = isManagementSide
+      ? null
+      : resolveFormStationId(role, form.stationId ?? 0, effectiveStationId)
     const body: ExpenseWriteRequest = {
       ...form,
       type: expenseKind,
       sideAction: resolvedSideAction,
-      stationId: resolveFormStationId(role, form.stationId, effectiveStationId),
+      stationId: resolvedStationId,
       localAmount: form.localAmount.replace(/,/g, ''),
-      currencyCode: form.currencyCode.toUpperCase(),
-      rate: !isExchangeEntry || isUsdCurrency ? '0' : form.rate.replace(/,/g, ''),
-      amountUsd: !isExchangeEntry || isUsdCurrency ? '0' : form.amountUsd.replace(/,/g, ''),
+      rate: form.rate.replace(/,/g, ''),
+      amountUsd: form.amountUsd.replace(/,/g, ''),
       date: `${recordDate}T12:00:00.000Z`,
       ...(showBizPicker && formBusinessId != null ? { businessId: formBusinessId } : {}),
     }
@@ -451,24 +472,28 @@ export function ExpensesPage({
     const stationCol: Column<Expense> = {
       key: 'stationId',
       header: 'Station',
-      render: (r) => stationNameById.get(r.stationId) ?? r.stationId,
+      render: (r) => {
+        if (r.stationId == null || r.stationId <= 0) return <span className="text-slate-400">—</span>
+        return stationNameById.get(r.stationId) ?? r.stationId
+      },
     }
     const tail: Column<Expense>[] = [
       { key: 'description', header: 'Description' },
       {
-        key: 'currencyCode',
+        key: 'currencyId',
         header: 'Currency',
-        render: (r) => (r.currencyCode?.trim() ? r.currencyCode.toUpperCase() : 'USD'),
+        render: (r) => currencyById.get(r.currencyId)?.code.toUpperCase() ?? `#${r.currencyId}`,
       },
       {
         key: 'Rate',
         header: 'Rate',
         render: (r) => {
-          const isUsd = (r.currencyCode ?? '').trim().toUpperCase() === 'USD'
+          const code = (currencyById.get(r.currencyId)?.code ?? '').trim().toUpperCase()
+          const isUsd = code === 'USD'
           if (isUsd) return '----'
           return formatWithCurrencySymbol(
             Number(r.rate),
-            currencySymbolByCode.get((r.currencyCode ?? 'USD').toUpperCase()) ??
+            currencySymbolByCode.get(code) ??
               expenseCurrencySymbolByBusinessStation.get(`${r.businessId}:${r.stationId}`),
           )
         },
@@ -476,20 +501,20 @@ export function ExpensesPage({
       {
         key: 'localAmount',
         header: 'Local',
-        render: (r) =>
-          formatWithCurrencySymbol(
-            Number(r.localAmount),
-            currencySymbolByCode.get((r.currencyCode ?? 'USD').toUpperCase()) ??
-              expenseCurrencySymbolByBusinessStation.get(`${r.businessId}:${r.stationId}`),
-          ),
+        render: (r) => {
+          const code = (currencyById.get(r.currencyId)?.code ?? '').trim().toUpperCase()
+          const isUsd = code === 'USD'
+          const sym =
+            currencySymbolByCode.get(code) ??
+            expenseCurrencySymbolByBusinessStation.get(`${r.businessId}:${r.stationId}`)
+          if (isUsd) return formatWithCurrencySymbol(0, sym)
+          return formatWithCurrencySymbol(Number(r.localAmount), sym)
+        },
       },
       {
         key: 'amountUsd',
         header: 'USD',
-        render: (r) => {
-          const isUsd = (r.currencyCode ?? '').trim().toUpperCase() === 'USD'
-          return isUsd ? '$0.00' : formatCurrency(Number(r.amountUsd), 'USD')
-        },
+        render: (r) => formatCurrency(Number(r.amountUsd), 'USD'),
       },
       {
         key: 'userId',
@@ -500,10 +525,12 @@ export function ExpensesPage({
     const out: Column<Expense>[] = [idCol]
     if (showBusinessColumnInTables(role)) out.push(businessCol)
     out.push(...middle)
-    if (showStationColumnInTables(role)) out.push(stationCol)
+    // Management entries have no station context, so we drop the column entirely on the
+    // Management routes to avoid a permanent dash placeholder.
+    if (!isManagementSide && showStationColumnInTables(role)) out.push(stationCol)
     out.push(...tail)
     return out
-  }, [role, stationNameById, userNameById, businessNameById, expenseCurrencySymbolByBusinessStation, currencySymbolByCode])
+  }, [role, isManagementSide, stationNameById, userNameById, businessNameById, expenseCurrencySymbolByBusinessStation, currencySymbolByCode, currencyById])
 
   return (
     <>
@@ -565,7 +592,7 @@ export function ExpensesPage({
               {SETTINGS_STATION_HINT}
             </div>
           )}
-          {showStationPicker && (
+          {showStationPicker && !isManagementSide && (
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Station</label>
               <FormSelect
@@ -576,6 +603,11 @@ export function ExpensesPage({
                 isDisabled={needsBusiness || stationOptionsBase.length === 0}
               />
             </div>
+          )}
+          {isManagementSide && (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Management entries are recorded at the business level — no station is required.
+            </p>
           )}
           <DateField value={recordDate} onChange={setRecordDate} />
           <div>
@@ -592,10 +624,10 @@ export function ExpensesPage({
             <FormSelect
               options={currencyOptionsForForm}
               value={currencySel}
-              onChange={(o) => setForm((f) => ({ ...f, currencyCode: o?.value?.toUpperCase() ?? 'USD' }))}
+              onChange={(o) => setForm((f) => ({ ...f, currencyId: o ? Number(o.value) : 0 }))}
               placeholder="Select currency"
             />
-            <p className="mt-1 text-xs text-slate-500">Currency list follows fuel-price currency for selected business and station.</p>
+            <p className="mt-1 text-xs text-slate-500">Currencies come from Setup → Currencies (same list for every station).</p>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Local amount</label>

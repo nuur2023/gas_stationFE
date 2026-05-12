@@ -8,7 +8,7 @@ import {
   useDeleteJournalEntryMutation,
   useGetAccountsQuery,
   useGetAccountParentCandidatesQuery,
-  useGetCustomerFuelGivensQuery,
+  useGetOperationReportCustomersQuery,
   useGetCustomerPaymentsQuery,
   useGetJournalEntriesQuery,
   useGetStationsQuery,
@@ -17,11 +17,15 @@ import { useAppSelector } from '../../app/hooks'
 import { DateField } from '../../components/DateField'
 import { filterAccountsForViewer } from '../../lib/accountScope'
 import { formatDecimal } from '../../lib/formatNumber'
+import { useEffectiveStationId } from '../../lib/stationContext'
 
 export function AccountingPage() {
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const businessId = authBusinessId ?? 0
+  const effectiveStationId = useEffectiveStationId()
+  const paymentFilterStationId =
+    role !== 'SuperAdmin' && effectiveStationId != null && effectiveStationId > 0 ? effectiveStationId : undefined
   const [page] = useState(1)
   const [pageSize] = useState(100)
   const { data: accounts } = useGetAccountsQuery({
@@ -34,9 +38,16 @@ export function AccountingPage() {
     { skip: businessId <= 0 },
   )
   const { data: journalEntries } = useGetJournalEntriesQuery({ page, pageSize })
-  const { data: customerPayments } = useGetCustomerPaymentsQuery({ page, pageSize })
+  const { data: customerPayments } = useGetCustomerPaymentsQuery({
+    page,
+    pageSize,
+    ...(paymentFilterStationId != null ? { filterStationId: paymentFilterStationId } : {}),
+  })
   const { data: stations } = useGetStationsQuery({ page: 1, pageSize: 500, businessId: businessId || undefined })
-  const { data: customerGivens } = useGetCustomerFuelGivensQuery({ page: 1, pageSize: 500 })
+  const { data: customerOptionsRows } = useGetOperationReportCustomersQuery(
+    { businessId },
+    { skip: businessId <= 0 },
+  )
 
   const [createAccount] = useCreateAccountMutation()
   const [deleteAccount] = useDeleteAccountMutation()
@@ -57,7 +68,7 @@ export function AccountingPage() {
   const [jAmount, setJAmount] = useState('')
   const [jRemark, setJRemark] = useState('')
 
-  const [pGivenId, setPGivenId] = useState<number | ''>('')
+  const [pCustomerId, setPCustomerId] = useState<number | ''>('')
   const [pAmount, setPAmount] = useState('')
 
   const accountOptions = useMemo(
@@ -65,7 +76,7 @@ export function AccountingPage() {
     [accounts?.items, role, authBusinessId],
   )
   const stationOptions = useMemo(() => stations?.items ?? [], [stations?.items])
-  const givenOptions = useMemo(() => customerGivens?.items ?? [], [customerGivens?.items])
+  const givenOptions = useMemo(() => customerOptionsRows ?? [], [customerOptionsRows])
 
   return (
     <div className="space-y-6">
@@ -182,28 +193,28 @@ export function AccountingPage() {
       <section className="rounded-xl border bg-white p-4">
         <h2 className="mb-3 text-lg font-medium">Customer Payments</h2>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-          <select className="rounded border px-2 py-2" value={String(pGivenId)} onChange={(e) => setPGivenId(e.target.value ? Number(e.target.value) : '')}>
-            <option value="">Select customer fuel given</option>
-            {givenOptions.map((g) => <option key={g.id} value={g.id}>{g.name} | #{g.id}</option>)}
+          <select className="rounded border px-2 py-2" value={String(pCustomerId)} onChange={(e) => setPCustomerId(e.target.value ? Number(e.target.value) : '')}>
+            <option value="">Select customer</option>
+            {givenOptions.map((g) => <option key={g.customerId} value={g.customerId}>{g.name}</option>)}
           </select>
           <input className="rounded border px-2 py-2" placeholder="Amount paid" value={pAmount} onChange={(e) => setPAmount(e.target.value)} />
           <button
             className="rounded bg-emerald-600 px-3 py-2 text-white"
             onClick={async () => {
-              if (pGivenId === '') return
-              await createPayment({ customerFuelGivenId: pGivenId, amountPaid: pAmount, businessId }).unwrap()
-              setPGivenId(''); setPAmount('')
+              if (pCustomerId === '') return
+              await createPayment({ customerId: pCustomerId, amountPaid: pAmount, businessId }).unwrap()
+              setPCustomerId(''); setPAmount('')
             }}
           >Save payment</button>
         </div>
         <div className="mt-3 overflow-auto">
           <table className="min-w-full text-sm">
-            <thead><tr className="text-left"><th>Date</th><th>CustomerFuelGivenId</th><th>Amount</th><th /></tr></thead>
+            <thead><tr className="text-left"><th>Date</th><th>CustomerId</th><th>Amount</th><th /></tr></thead>
             <tbody>
               {(customerPayments?.items ?? []).map((p) => (
                 <tr key={p.id} className="border-t">
                   <td>{new Date(p.paymentDate).toLocaleString()}</td>
-                  <td>{p.customerFuelGivenId}</td>
+                  <td>{p.customerId}</td>
                   <td>{formatDecimal(p.amountPaid)}</td>
                   <td><button className="text-rose-600" onClick={async () => deletePayment(p.id).unwrap()}>Delete</button></td>
                 </tr>

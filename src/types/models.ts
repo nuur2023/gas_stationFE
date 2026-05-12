@@ -150,13 +150,14 @@ export interface Expense {
   sideAction: 'Operation' | 'Management'
   date: string
   description: string
-  currencyCode: string
+  currencyId: number
   localAmount: number
   rate: number
   amountUsd: number
   userId: number
   businessId: number
-  stationId: number
+  /** NULL for Management entries (recorded at the business level, no station context). */
+  stationId: number | null
 }
 
 /** Operation report: cash out lines from expenses (local amount + optional exchange columns). */
@@ -169,7 +170,8 @@ export interface CashOutDailyLineDto {
   localAmount: number
   rate: number
   amountUsd: number
-  stationId: number
+  /** NULL for Management entries (recorded at the business level). */
+  stationId: number | null
 }
 
 export interface CashOutDailyReportDto {
@@ -262,6 +264,16 @@ export interface DailyStationReportDto {
   cashTakenFromStation: DailyStationCashTakenRowDto[]
   expenseFromOffice: DailyStationAmountRowDto[]
   exchangeFromOffice: DailyStationExchangeRowDto[]
+  /** Salary cash-outs for the whole business in the report range (not station-scoped; same as office sections). */
+  salaryPayments: DailyStationSalaryPaymentRowDto[]
+}
+
+export interface DailyStationSalaryPaymentRowDto {
+  /** Distinct employees paid in that group. */
+  employees: number
+  amount: number
+  recordedBy: string
+  date: string
 }
 
 export interface Inventory {
@@ -342,16 +354,47 @@ export interface GeneratorUsage {
 
 export interface CustomerFuelGiven {
   id: number
+  customerId?: number
   name: string
   phone: string
+  /** "Fuel" (uses fuel fields) or "Cash" (uses cashAmount). */
+  type: string
+  /** FK to Currencies — denomination for price / cash amount. */
+  currencyId?: number
   fuelTypeId: number
   givenLiter: number
   price: number
   usdAmount: number
+  /** Local-currency cash advanced to the customer (Type === "Cash"). */
+  cashAmount: number
   remark?: string | null
   stationId: number
   businessId: number
   date: string
+}
+
+export interface CustomerFuelGivenCustomer {
+  id: number
+  name: string
+  phone: string
+  totalDue: number
+  totalPaid: number
+  balance: number
+  lastDate: string
+  stationId: number
+  businessId: number
+}
+
+export interface CustomerIdentityWriteRequest {
+  name: string
+  phone?: string
+}
+
+export interface CustomerWriteRequest {
+  name: string
+  phone?: string
+  stationId?: number
+  businessId?: number
 }
 
 export interface Account {
@@ -473,11 +516,42 @@ export interface ReportPeriodViewDto {
     equity: BalanceSheetAccountRow[]
   }
   cashFlowStatement: {
+    /** When present, cash flow is direct-method from journal cash/bank legs. */
+    method?: 'direct' | string
+    openingCashBalance?: number
+    directDetails?: {
+      lineKey: string
+      accountCode: string
+      accountName: string
+      amount: number
+    }[]
+    operatingActivities?: {
+      description: string
+      code: string
+      name: string
+      amount: number
+    }[]
+    investingActivities?: {
+      description: string
+      code: string
+      name: string
+      amount: number
+    }[]
+    financingActivities?: {
+      description: string
+      code: string
+      name: string
+      amount: number
+    }[]
     receivedAccounts: ProfitLossAccountRow[]
     paidAccounts: ProfitLossAccountRow[]
     cashReceivedFromFuelSales: number
     cashPaidForExpense: number
     netCashFromOperating: number
+    netCashFromInvesting?: number
+    netCashFromFinancing?: number
+    netIncreaseInCash?: number
+    endingCashBalance?: number
   }
 }
 
@@ -508,21 +582,28 @@ export interface JournalEntryDescriptionPatchRequest {
 
 export interface CustomerPayment {
   id: number
-  customerFuelGivenId: number
+  customerId: number
+  referenceNo?: string | null
+  /** "Charged" | "Payment" */
+  description: string
+  customerName?: string
+  customerPhone?: string
+  chargedAmount: number
   amountPaid: number
+  balance: number
   paymentDate: string
   businessId: number
   userId: number
   /** Set on list API responses */
   userName?: string | null
-  /** Remaining on linked fuel given (list API) */
+  /** Customer-level remaining (sum charged - sum paid for this customer); list API */
   remainingBalance?: number | null
   /** Paid | Half-paid | Unpaid | — (list API) */
   paymentStatus?: string | null
 }
 
 export interface CustomerPaymentWriteRequest {
-  customerFuelGivenId: number
+  customerId: number
   amountPaid: string
   paymentDate?: string
   businessId?: number
@@ -537,8 +618,10 @@ export interface CustomerPaymentPreviewBalance {
   balance: number
 }
 
-/** GET CustomerFuelGivens/outstanding — rows still owing money */
+/** GET CustomerFuelGivens/outstanding — one row per customer with positive ledger balance */
 export interface OutstandingCustomerFuelGivenRow {
+  customerId: number
+  /** Same as customerId; kept for backward compatibility. */
   id: number
   name: string
   phone: string
@@ -547,21 +630,18 @@ export interface OutstandingCustomerFuelGivenRow {
   balance: number
   date: string
   stationId: number
-  fuelTypeId: number
-  givenLiter: number
-  price: number
-  usdAmount: number
 }
 
 export interface ExpenseWriteRequest {
   type: 'Expense' | 'Exchange' | 'cashOrUsdTaken'
   sideAction: 'Operation' | 'Management'
   description: string
-  currencyCode: string
+  currencyId: number
   localAmount: string
   rate: string
   amountUsd: string
-  stationId: number
+  /** Required for Operation entries; null/omit for Management entries. */
+  stationId: number | null
   businessId?: number
   /** Posting date (ISO); maps to API `date`. */
   date?: string
@@ -594,16 +674,217 @@ export interface GeneratorUsageWriteRequest {
 }
 
 export interface CustomerFuelGivenWriteRequest {
+  /** When set, server binds to this customer (POST) or validates (PUT). */
+  customerId?: number
   name: string
   phone: string
+  /** "Fuel" (default) or "Cash". Backend ignores fuel fields when "Cash" and vice versa. */
+  type?: 'Fuel' | 'Cash'
+  /** FK to Currencies; omit or 0 to let the server default (e.g. SSP). */
+  currencyId?: number
   fuelTypeId: number
   givenLiter: string
   price: string
   amountUsd?: string
+  /** Provide when type === "Cash". */
+  cashAmount?: string
   remark?: string
   stationId: number
   businessId?: number
   date?: string
+}
+
+/** GET OperationReports/customer-report */
+export interface CustomerReportRowDto {
+  id: number
+  customerId: number
+  name: string
+  phone: string
+  description: string
+  type?: string | null
+  fuelTypeId?: number | null
+  fuelTypeName?: string | null
+  liters?: number | null
+  price?: number | null
+  cashTaken: number
+  charged: number
+  paid: number
+  balance: number
+  date: string
+  referenceNo?: string | null
+}
+
+export interface CustomerReportDto {
+  from: string
+  to: string
+  customerId: number
+  customerName?: string | null
+  customerPhone?: string | null
+  rows: CustomerReportRowDto[]
+  totalCharged: number
+  totalCashTaken: number
+  totalLiters: number
+  totalPaid: number
+  balance: number
+}
+
+/** GET OperationReports/customers — distinct customers (name+phone) for a business */
+export interface CustomerOption {
+  customerId: number
+  name: string
+  phone: string
+  lastDate: string
+}
+
+export interface Employee {
+  id: number
+  name: string
+  phone: string
+  email: string
+  address: string
+  position: string
+  baseSalary: number
+  isActive: boolean
+  businessId: number
+  stationId: number | null
+}
+
+export interface EmployeeWriteRequest {
+  name: string
+  phone?: string
+  email?: string
+  address?: string
+  position?: string
+  baseSalary: string
+  isActive: boolean
+  businessId?: number
+  stationId?: number | null
+}
+
+export interface EmployeeOption {
+  id: number
+  name: string
+  phone: string
+  position: string
+  baseSalary: number
+  stationId: number | null
+  /** True when a Salary accrual already exists for this employee in the requested payroll period. */
+  hasSalaryForPeriod?: boolean
+}
+
+export interface EmployeePayment {
+  id: number
+  employeeId: number
+  referenceNo?: string | null
+  description: string
+  chargedAmount: number
+  paidAmount: number
+  balance: number
+  paymentDate: string
+  periodLabel?: string | null
+  businessId: number
+  userId: number
+  stationId: number | null
+  userName?: string | null
+  employeeName?: string | null
+  remainingBalance?: number | null
+}
+
+export interface EmployeePaymentWriteRequest {
+  employeeId: number
+  description?: string
+  amountPaid: string
+  chargedAmount?: string
+  paymentDate?: string
+  periodLabel?: string
+  businessId?: number
+  stationId?: number | null
+}
+
+export interface EmployeePaymentPreviewBalance {
+  employeeId: number
+  name: string
+  phone: string
+  position: string
+  baseSalary: number
+  totalDue: number
+  totalPaid: number
+  balance: number
+}
+
+export interface PayrollRunItem {
+  employeeId: number
+  chargedAmount: string
+  amountPaid: string
+  excluded: boolean
+}
+
+export interface PayrollRunWriteRequest {
+  period: string
+  paymentDate?: string
+  businessId: number
+  stationId?: number | null
+  items: PayrollRunItem[]
+}
+
+export interface PayrollRunResult {
+  period: string
+  paymentDate: string
+  stationId: number | null
+  createdRowCount: number
+  paidEmployeeCount: number
+  totalCharged: number
+  totalPaid: number
+  rows: EmployeePayment[]
+  skippedEmployeeCount?: number
+  skippedEmployees?: { employeeId: number; name: string; reason: string }[]
+}
+
+export interface PayrollEmployeeStatusRow {
+  employeeId: number
+  name: string
+  phone: string
+  position: string
+  stationId: number | null
+  baseSalary: number
+  totalCharged: number
+  totalPaid: number
+  balance: number
+  lastPaymentDate?: string | null
+}
+
+export interface PayrollStatusReportDto {
+  businessId: number
+  period: string
+  stationId: number | null
+  paid: PayrollEmployeeStatusRow[]
+  unpaid: PayrollEmployeeStatusRow[]
+}
+
+export interface EmployeePaymentHistoryRowDto {
+  id: number
+  date: string
+  description: string
+  periodLabel?: string | null
+  charged: number
+  paid: number
+  balance: number
+  referenceNo?: string | null
+  stationId: number | null
+}
+
+export interface EmployeePaymentHistoryDto {
+  from: string
+  to: string
+  employeeId: number
+  employeeName: string
+  employeePhone: string
+  employeePosition: string
+  baseSalary: number
+  rows: EmployeePaymentHistoryRowDto[]
+  totalCharged: number
+  totalPaid: number
+  outstandingBalance: number
 }
 
 export interface PumpWriteRequest {
@@ -741,8 +1022,6 @@ export interface Purchase {
   invoiceNo: string
   businessId: number
   purchaseDate: string
-  status: 'Paid' | 'Half-paid' | 'Unpaid'
-  amountPaid: number
   createdAt: string
   updatedAt: string
 }
@@ -775,8 +1054,6 @@ export interface PurchaseWriteRequest {
   invoiceNo: string
   items?: PurchaseLineWrite[]
   purchaseDate?: string
-  status?: 'Paid' | 'Half-paid' | 'Unpaid'
-  amountPaid?: string
   businessId?: number
 }
 
@@ -785,8 +1062,6 @@ export interface PurchaseHeaderWriteRequest {
   supplierId: number
   invoiceNo: string
   purchaseDate?: string
-  status?: 'Paid' | 'Half-paid' | 'Unpaid'
-  amountPaid?: string
   businessId?: number
 }
 
@@ -794,7 +1069,11 @@ export interface SupplierPayment {
   id: number
   referenceNo?: string | null
   supplierId: number
-  amount: number
+  description: string
+  chargedAmount: number
+  paidAmount: number
+  balance: number
+  purchaseId?: number | null
   date: string
   businessId: number
   userId: number
@@ -803,11 +1082,34 @@ export interface SupplierPayment {
 }
 
 export interface SupplierPaymentWriteRequest {
-  referenceNo?: string | null
   supplierId: number
   amount: string
   date?: string
   businessId?: number
+}
+
+export interface SupplierReportRowDto {
+  id: number
+  name: string
+  description: string
+  liters: number | null
+  amount: number
+  paid: number
+  balance: number
+  date: string
+  purchaseId: number | null
+  referenceNo?: string | null
+}
+
+export interface SupplierReportDto {
+  from: string
+  to: string
+  supplierId?: number | null
+  supplierName?: string | null
+  rows: SupplierReportRowDto[]
+  totalCharged: number
+  totalPaid: number
+  balance: number
 }
 
 export interface BulkPermissionItem {

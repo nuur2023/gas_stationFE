@@ -3,7 +3,7 @@ import {
   useCreateCustomerPaymentMutation,
   useDeleteCustomerPaymentMutation,
   useGetBusinessesQuery,
-  useGetCustomerFuelGivensQuery,
+  useGetOperationReportCustomersQuery,
   useGetCustomerPaymentPreviewBalanceQuery,
   useGetCustomerPaymentsQuery,
 } from '../../app/api/apiSlice'
@@ -14,7 +14,11 @@ import { Modal } from '../../components/Modal'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
 import { usePagePermissionActions } from '../../hooks/usePagePermissionActions'
 import { useDebouncedValue } from '../../lib/hooks'
-import { showBusinessPickerInForms } from '../../lib/stationContext'
+import {
+  adminNeedsSettingsStation,
+  showBusinessPickerInForms,
+  useEffectiveStationId,
+} from '../../lib/stationContext'
 import { formatDecimal } from '../../lib/formatNumber'
 import type { CustomerPayment } from '../../types/models'
 
@@ -23,6 +27,11 @@ export function CustomerPaymentsPage() {
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const showBizPicker = showBusinessPickerInForms(role)
+  const effectiveStationId = useEffectiveStationId()
+  const needsWorkspaceStation = adminNeedsSettingsStation(role, effectiveStationId)
+
+  const paymentFilterStationId =
+    role !== 'SuperAdmin' && effectiveStationId != null && effectiveStationId > 0 ? effectiveStationId : undefined
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
@@ -30,8 +39,16 @@ export function CustomerPaymentsPage() {
   const debounced = useDebouncedValue(search, 350)
   const [businessId, setBusinessId] = useState<number | null>(authBusinessId ?? null)
 
-  const { data, isFetching } = useGetCustomerPaymentsQuery({ page, pageSize, q: debounced || undefined })
-  const { data: givens } = useGetCustomerFuelGivensQuery({ page: 1, pageSize: 500 })
+  const { data, isFetching } = useGetCustomerPaymentsQuery({
+    page,
+    pageSize,
+    q: debounced || undefined,
+    ...(paymentFilterStationId != null ? { filterStationId: paymentFilterStationId } : {}),
+  })
+  const { data: customers } = useGetOperationReportCustomersQuery(
+    { businessId: showBizPicker ? (businessId ?? 0) : (authBusinessId ?? 0) },
+    { skip: (showBizPicker ? (businessId ?? 0) : (authBusinessId ?? 0)) <= 0 },
+  )
   const { data: businesses } = useGetBusinessesQuery({ page: 1, pageSize: 500, q: undefined })
   const [createPayment] = useCreateCustomerPaymentMutation()
   const [deletePayment] = useDeleteCustomerPaymentMutation()
@@ -39,7 +56,7 @@ export function CustomerPaymentsPage() {
 
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [open, setOpen] = useState(false)
-  const [customerFuelGivenId, setCustomerFuelGivenId] = useState<number | null>(null)
+  const [customerId, setCustomerId] = useState<number | null>(null)
   const [amountPaid, setAmountPaid] = useState('')
 
   const businessOptions: SelectOption[] = useMemo(() => {
@@ -51,39 +68,39 @@ export function CustomerPaymentsPage() {
     }
     return []
   }, [businesses?.items, showBizPicker, authBusinessId])
-  const givensForBusiness = useMemo(() => {
-    const items = givens?.items ?? []
+  const customersForBusiness = useMemo(() => {
+    const items = customers ?? []
     if (!showBizPicker || businessId == null || businessId <= 0) return items
-    return items.filter((g) => g.businessId === businessId)
-  }, [givens?.items, showBizPicker, businessId])
+    return items
+  }, [customers, showBizPicker, businessId])
 
-  const givenOptions: SelectOption[] = useMemo(
-    () => givensForBusiness.map((x) => ({ value: String(x.id), label: `${x.name} (${x.phone}) - #${x.id}` })),
-    [givensForBusiness],
+  const customerOptions: SelectOption[] = useMemo(
+    () => customersForBusiness.map((x) => ({ value: String(x.customerId), label: `${x.name} (${x.phone})` })),
+    [customersForBusiness],
   )
   const givenNameById = useMemo(() => {
     const m = new Map<number, string>()
-    for (const g of givens?.items ?? []) m.set(g.id, g.name)
+    for (const g of customers ?? []) m.set(g.customerId, g.name)
     return m
-  }, [givens?.items])
+  }, [customers])
 
   const previewBusinessId = showBizPicker ? businessId : authBusinessId
   const { data: previewBalance, isFetching: previewLoading } = useGetCustomerPaymentPreviewBalanceQuery(
     {
-      customerFuelGivenId: customerFuelGivenId!,
+      customerId: customerId!,
       businessId: previewBusinessId != null && previewBusinessId > 0 ? previewBusinessId : undefined,
     },
     {
       skip:
-        customerFuelGivenId == null ||
-        customerFuelGivenId <= 0 ||
+        customerId == null ||
+        customerId <= 0 ||
         previewBusinessId == null ||
         previewBusinessId <= 0,
     },
   )
 
   useEffect(() => {
-    setCustomerFuelGivenId(null)
+    setCustomerId(null)
   }, [businessId])
 
   function paymentStatusBadge(status: string | null | undefined) {
@@ -100,13 +117,32 @@ export function CustomerPaymentsPage() {
   }
 
   const cols: Column<CustomerPayment>[] = [
-    { key: 'paymentDate', header: 'Payment Date', render: (r) => new Date(r.paymentDate).toLocaleString() },
-    { key: 'customerFuelGivenId', header: 'Customer', render: (r) => givenNameById.get(r.customerFuelGivenId) ?? `#${r.customerFuelGivenId}` },
-    { key: 'amountPaid', header: 'Amount Paid', render: (r) => formatDecimal(r.amountPaid) },
+    { key: 'paymentDate', header: 'Date', render: (r) => new Date(r.paymentDate).toLocaleString() },
     {
-      key: 'remainingBalance',
+      key: 'referenceNo',
+      header: 'Reference',
+      render: (r) => r.referenceNo?.trim() ?? '—',
+    },
+    {
+      key: 'customerName',
+      header: 'Customer',
+      render: (r) => {
+        const name = r.customerName?.trim()
+        if (name) return r.customerPhone?.trim() ? `${name} (${r.customerPhone})` : name
+        return r.customerId ? givenNameById.get(r.customerId) ?? `#${r.customerId}` : '—'
+      },
+    },
+    {
+      key: 'description',
+      header: 'Description',
+      render: (r) => r.description ?? 'Payment',
+    },
+    { key: 'chargedAmount', header: 'Charged', render: (r) => (r.chargedAmount > 0 ? formatDecimal(r.chargedAmount) : '—') },
+    { key: 'amountPaid', header: 'Paid', render: (r) => (r.amountPaid > 0 ? formatDecimal(r.amountPaid) : '—') },
+    {
+      key: 'balance',
       header: 'Balance',
-      render: (r) => (r.remainingBalance == null ? '—' : formatDecimal(r.remainingBalance)),
+      render: (r) => formatDecimal(r.balance ?? 0),
     },
     {
       key: 'paymentStatus',
@@ -121,19 +157,24 @@ export function CustomerPaymentsPage() {
   ]
 
   async function save() {
-    if (!routeCanCreate || !customerFuelGivenId || !amountPaid.trim()) return
+    if (!routeCanCreate || !customerId || !amountPaid.trim()) return
     await createPayment({
-      customerFuelGivenId,
+      customerId,
       amountPaid: amountPaid.trim(),
       businessId: showBizPicker ? (businessId ?? undefined) : undefined,
     }).unwrap()
     setOpen(false)
-    setCustomerFuelGivenId(null)
+    setCustomerId(null)
     setAmountPaid('')
   }
 
   return (
     <>
+      {needsWorkspaceStation && (
+        <div className="mx-auto mb-3 max-w-7xl rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Choose a working station under Settings to see payments for that station only.
+        </div>
+      )}
       <DataTable<CustomerPayment>
         title="Customer Payments"
         addLabel="Add Payment"
@@ -194,15 +235,15 @@ export function CustomerPaymentsPage() {
             </div>
           )}
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Customer fuel given</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Customer</label>
             <FormSelect
-              options={givenOptions}
-              value={givenOptions.find((x) => x.value === String(customerFuelGivenId ?? '')) ?? null}
-              onChange={(opt) => setCustomerFuelGivenId(opt ? Number(opt.value) : null)}
-              placeholder="Select customer fuel given"
+              options={customerOptions}
+              value={customerOptions.find((x) => x.value === String(customerId ?? '')) ?? null}
+              onChange={(opt) => setCustomerId(opt ? Number(opt.value) : null)}
+              placeholder="Select customer"
             />
           </div>
-          {customerFuelGivenId != null && customerFuelGivenId > 0 && previewBusinessId != null && previewBusinessId > 0 ? (
+          {customerId != null && customerId > 0 && previewBusinessId != null && previewBusinessId > 0 ? (
             <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-emerald-50/40 p-4 shadow-sm">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Customer</p>
               {previewLoading ? (

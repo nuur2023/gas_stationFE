@@ -34,6 +34,25 @@ import {
 } from '../../lib/stationContext'
 import type { JournalEntry, JournalEntryWriteRequest } from '../../types/models'
 
+/** RTK Query / fetchBaseQuery errors: plain string body, ProblemDetails, or message. */
+function parseApiMutationError(e: unknown, fallback: string): string {
+  if (typeof e === 'object' && e != null && 'data' in e) {
+    const data = (e as { data: unknown }).data
+    if (typeof data === 'string' && data.trim()) return data.trim()
+    if (typeof data === 'object' && data != null) {
+      const o = data as Record<string, unknown>
+      if (typeof o.title === 'string' && o.title.trim()) return o.title.trim()
+      if (typeof o.detail === 'string' && o.detail.trim()) return o.detail.trim()
+      if (typeof o.message === 'string' && o.message.trim()) return o.message.trim()
+    }
+  }
+  if (typeof e === 'object' && e != null && 'error' in e) {
+    const err = (e as { error: unknown }).error
+    if (typeof err === 'string' && err.trim()) return err.trim()
+  }
+  return fallback
+}
+
 export function ManualJournalEntryPage() {
   const { canView: routeCanView, canCreate: routeCanCreate, canUpdate: routeCanUpdate } = usePagePermissionActions()
   const { showSuccess, showError } = useToast()
@@ -292,14 +311,19 @@ export function ManualJournalEntryPage() {
         ...(l.supplierId != null && l.supplierId > 0 ? { supplierId: l.supplierId } : {}),
       })),
     }
-    await createJournal(body).unwrap()
-    setOpen(false)
-    setDescription('')
-    setStationId(null)
-    setJournalDate(new Date().toISOString().slice(0, 10))
-    setEntryKind(0)
-    setLines([emptyLine(), emptyLine()])
-    setSelectedLineIdx(0)
+    try {
+      await createJournal(body).unwrap()
+      showSuccess('Journal entry posted.')
+      setOpen(false)
+      setDescription('')
+      setStationId(null)
+      setJournalDate(new Date().toISOString().slice(0, 10))
+      setEntryKind(0)
+      setLines([emptyLine(), emptyLine()])
+      setSelectedLineIdx(0)
+    } catch (e) {
+      showError(parseApiMutationError(e, 'Could not post journal entry.'))
+    }
   }
 
   function openDescriptionEdit(row: JournalEntry) {
@@ -323,11 +347,7 @@ export function ManualJournalEntryPage() {
       setDescEditOpen(false)
       setDescEditEntry(null)
     } catch (e) {
-      const msg =
-        typeof e === 'object' && e != null && 'data' in e && typeof (e as { data?: unknown }).data === 'string'
-          ? (e as { data: string }).data
-          : 'Could not update journal header.'
-      showError(msg)
+      showError(parseApiMutationError(e, 'Could not update journal header.'))
     }
   }
 
@@ -344,7 +364,13 @@ export function ManualJournalEntryPage() {
         { accountId: p.toAccountId, debit: p.amount, credit: '0' },
       ],
     }
-    await createJournal(body).unwrap()
+    try {
+      await createJournal(body).unwrap()
+      showSuccess('Fund transfer posted.')
+    } catch (e) {
+      showError(parseApiMutationError(e, 'Could not post fund transfer.'))
+      throw e
+    }
   }
 
   return (
@@ -738,7 +764,7 @@ export function ManualJournalEntryPage() {
           </button>
           <button
             type="button"
-            onClick={save}
+            onClick={() => void save()}
             disabled={!linesValid || !description.trim() || !routeCanCreate}
             title={!routeCanCreate ? 'No create permission' : undefined}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"

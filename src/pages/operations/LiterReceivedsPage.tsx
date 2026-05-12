@@ -5,7 +5,6 @@ import {
   useGetBusinessesQuery,
   useGetFuelTypesQuery,
   useGetLiterReceivedsQuery,
-  useGetPendingPoolTransfersForConfirmQuery,
   useGetStationsQuery,
   useUpdateLiterReceivedMutation,
 } from "../../app/api/apiSlice";
@@ -188,9 +187,6 @@ export function LiterReceivedsPage() {
     toStationId: number;
     /** In (delivery) optional origin; 0 = none */
     fromStationId: number;
-    confirmPoolTransferReceived: boolean;
-    /** Selected pending business pool transfer id (Out). */
-    confirmTransferInventoryId: number;
   }>({
     type: "In",
     targo: "",
@@ -200,39 +196,7 @@ export function LiterReceivedsPage() {
     stationId: 0,
     toStationId: 0,
     fromStationId: 0,
-    confirmPoolTransferReceived: false,
-    confirmTransferInventoryId: 0,
   });
-
-  const pendingTransfersSkip =
-    effectiveFormBusinessId == null ||
-    effectiveFormBusinessId <= 0 ||
-    form.type !== "Out" ||
-    form.toStationId <= 0 ||
-    form.fuelTypeId <= 0;
-
-  const { data: pendingPoolTransfers = [] } = useGetPendingPoolTransfersForConfirmQuery(
-    {
-      businessId: effectiveFormBusinessId ?? 0,
-      toStationId: form.toStationId,
-      fuelTypeId: form.fuelTypeId,
-    },
-    { skip: pendingTransfersSkip },
-  );
-
-  const pendingTransferOptions: SelectOption[] = useMemo(
-    () =>
-      pendingPoolTransfers.map((p) => ({
-        value: String(p.id),
-        label: `${formatDecimal(p.liters)} L · ${new Date(p.date).toLocaleDateString()} (#${p.id})`,
-      })),
-    [pendingPoolTransfers],
-  );
-
-  const pendingTransferSel: SelectOption | null =
-    pendingTransferOptions.find(
-      (o) => o.value === String(form.confirmTransferInventoryId),
-    ) ?? null;
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [recordDate, setRecordDate] = useState(() =>
@@ -304,7 +268,6 @@ export function LiterReceivedsPage() {
             : items.length > 1
               ? (items.find((s) => s.id !== first)?.id ?? 0)
               : 0,
-        confirmTransferInventoryId: 0,
       };
     });
   }, [open, showBizPicker, formBusinessId, stationsForForm?.items]);
@@ -394,11 +357,6 @@ export function LiterReceivedsPage() {
     if (sourceId <= 0) return false;
     if (form.toStationId === sourceId) return false;
     if (showStationPicker && form.stationId <= 0) return false;
-    if (
-      form.confirmPoolTransferReceived &&
-      (!form.confirmTransferInventoryId || form.confirmTransferInventoryId <= 0)
-    )
-      return false;
     return true;
   }, [
     needsBusiness,
@@ -408,20 +366,6 @@ export function LiterReceivedsPage() {
     staffHasStation,
     effectiveStationId,
   ]);
-
-  useEffect(() => {
-    if (form.type !== "Out") {
-      setForm((f) =>
-        f.confirmPoolTransferReceived || f.confirmTransferInventoryId
-          ? {
-              ...f,
-              confirmPoolTransferReceived: false,
-              confirmTransferInventoryId: 0,
-            }
-          : f,
-      );
-    }
-  }, [form.type]);
 
   function openCreate() {
     setEditing(null);
@@ -437,8 +381,6 @@ export function LiterReceivedsPage() {
         stationId: 0,
         toStationId: 0,
         fromStationId: 0,
-        confirmPoolTransferReceived: false,
-        confirmTransferInventoryId: 0,
       });
       setRecordDate(new Date().toISOString().slice(0, 10));
       setOpen(true);
@@ -457,8 +399,6 @@ export function LiterReceivedsPage() {
       stationId: defaultSt,
       toStationId: 0,
       fromStationId: 0,
-      confirmPoolTransferReceived: false,
-      confirmTransferInventoryId: 0,
     });
     setRecordDate(new Date().toISOString().slice(0, 10));
     setOpen(true);
@@ -479,8 +419,6 @@ export function LiterReceivedsPage() {
       stationId: row.stationId,
       toStationId: row.toStationId ?? 0,
       fromStationId: row.fromStationId ?? 0,
-      confirmPoolTransferReceived: false,
-      confirmTransferInventoryId: 0,
     });
     setRecordDate(
       row.date
@@ -523,12 +461,7 @@ export function LiterReceivedsPage() {
         : {}),
       recordedAt: `${recordDate}T12:00:00.000Z`,
       ...(form.type === "Out"
-        ? {
-            confirmBusinessPoolTransferReceived: form.confirmPoolTransferReceived,
-            ...(form.confirmPoolTransferReceived && form.confirmTransferInventoryId > 0
-              ? { confirmTransferInventoryId: form.confirmTransferInventoryId }
-              : {}),
-          }
+        ? { confirmBusinessPoolTransferReceived: false }
         : {}),
     };
 
@@ -771,8 +704,6 @@ export function LiterReceivedsPage() {
                     type: v,
                     toStationId: v === "In" ? 0 : f.toStationId,
                     fromStationId: v === "Out" ? 0 : f.fromStationId,
-                    confirmPoolTransferReceived: false,
-                    confirmTransferInventoryId: 0,
                   }));
                 }}
                 placeholder="Select flow"
@@ -883,7 +814,6 @@ export function LiterReceivedsPage() {
                     setForm((f) => ({
                       ...f,
                       toStationId: o ? Number(o.value) : 0,
-                      confirmTransferInventoryId: 0,
                     }))
                   }
                   placeholder={
@@ -903,60 +833,6 @@ export function LiterReceivedsPage() {
                 />
               </div>
             )}
-
-            {form.type === "Out" && !needsBusiness && effectiveFormBusinessId != null && effectiveFormBusinessId > 0 ? (
-              <div className="md:col-span-2 space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-                <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-800">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={form.confirmPoolTransferReceived}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        confirmPoolTransferReceived: e.target.checked,
-                        confirmTransferInventoryId: e.target.checked
-                          ? f.confirmTransferInventoryId
-                          : 0,
-                      }))
-                    }
-                  />
-                  <span>
-                    Confirm a matching <strong>business pool transfer</strong> was received at the destination
-                    station (same fuel, liters, and destination as this Out record).
-                  </span>
-                </label>
-                {form.confirmPoolTransferReceived ? (
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Pending pool transfer
-                    </label>
-                    <FormSelect
-                      options={pendingTransferOptions}
-                      value={pendingTransferSel}
-                      onChange={(o) =>
-                        setForm((f) => ({
-                          ...f,
-                          confirmTransferInventoryId: o ? Number(o.value) : 0,
-                        }))
-                      }
-                      placeholder={
-                        pendingTransfersSkip
-                          ? "Select destination and fuel first"
-                          : pendingTransferOptions.length === 0
-                            ? "No pending transfers for this destination and fuel"
-                            : "Select pending transfer"
-                      }
-                      isDisabled={pendingTransferOptions.length === 0}
-                    />
-                    <p className="mt-1 text-xs text-slate-500">
-                      Liters on this Out entry must match the pool transfer exactly. A notification is sent to your team
-                      when confirmed.
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
 
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
@@ -998,7 +874,6 @@ export function LiterReceivedsPage() {
                   setForm((f) => ({
                     ...f,
                     fuelTypeId: o ? Number(o.value) : 0,
-                    confirmTransferInventoryId: 0,
                   }))
                 }
                 placeholder="Select fuel type"

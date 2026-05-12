@@ -122,6 +122,8 @@ const DEFAULT_NAV: NavBlock[] = [
       { name: 'Generator usage report', route: '/reports/generator-usage' },
       { name: 'General daily report', route: '/reports/general-daily' },
       { name: 'Inventory daily', route: '/reports/inventory-daily' },
+      { name: 'Supplier report', route: '/reports/supplier' },
+      { name: 'Customer report', route: '/reports/customer' },
       { name: 'Daily station report', route: '/reports/daily-station' },
       { name: 'Outstanding customers', route: '/reports/outstanding-customers' },
     ],
@@ -149,8 +151,27 @@ const DEFAULT_NAV: NavBlock[] = [
       { name: 'Supplier balances', route: '/financial-reports/supplier-balances' },
       { name: 'Cash flow statement', route: '/financial-reports/daily-cash-flow' },
       { name: 'Report Period View', route: '/financial-reports/report-period-view' },
+    
     ],
   },
+  {
+    menu: { name: 'Employees', route: '/employees' },
+    submenus: [
+      { name: 'Employees', route: '/employees' },
+      { name: 'Paid employees', route: '/reports/payroll-paid' },
+      { name: 'Unpaid employees', route: '/reports/payroll-unpaid' },
+      { name: 'Employee payment history', route: '/reports/employee-payment-history' },
+    ],
+  },
+  // payroll
+  {
+    menu: { name: 'Payroll', route: '/payroll' },
+    submenus: [
+      { name: 'Payroll runs', route: '/payrolls/runs' },
+      { name: 'Record payment', route: '/payrolls' },
+    ],
+  },
+
   {
     menu: { name: 'Main setup', route: '/setup' },
     submenus: [

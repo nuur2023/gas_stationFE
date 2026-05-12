@@ -99,12 +99,18 @@ function detectFuelKind(name: string): 'petrol' | 'diesel' | null {
   return null
 }
 
+type ReportTab = 'operation' | 'management'
+
 export function GeneralDailyReportPage() {
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const showBizPicker = showBusinessPickerInForms(role)
   const showStationPicker = showStationPickerInForms(role)
   const effectiveStationId = useEffectiveStationId()
+
+  const [tab, setTab] = useState<ReportTab>('operation')
+  const isOperationTab = tab === 'operation'
+  const isManagementTab = tab === 'management'
 
   const [from, setFrom] = useState(todayISO)
   const [to, setTo] = useState(todayISO)
@@ -153,14 +159,17 @@ export function GeneralDailyReportPage() {
     return m
   }, [stationsData?.items])
 
+  const skipOperationQueries = !isOperationTab || effectiveBusinessId <= 0 || dateRangeInvalid || needsWorkspaceStation
+
   const { data: cashOutData, isFetching: cashOutLoading } = useGetCashOutDailyReportQuery(
     {
       businessId: effectiveBusinessId,
       from: !dateRangeInvalid && from ? `${from}T00:00:00` : undefined,
       to: !dateRangeInvalid && to ? `${to}T00:00:00` : undefined,
       stationId: apiStationId,
+      sideAction: 'Operation',
     },
-    { skip: effectiveBusinessId <= 0 || dateRangeInvalid || needsWorkspaceStation },
+    { skip: skipOperationQueries },
   )
 
   const { data: dailyGivenRows = [], isFetching: givenLoading } = useGetDailyFuelGivenReportQuery(
@@ -170,7 +179,7 @@ export function GeneralDailyReportPage() {
       to: !dateRangeInvalid && to ? `${to}T00:00:00` : undefined,
       stationId: apiStationId,
     },
-    { skip: effectiveBusinessId <= 0 || dateRangeInvalid || needsWorkspaceStation },
+    { skip: skipOperationQueries },
   )
   const { data: generatorData, isFetching: generatorLoading } = useGetGeneratorUsagesQuery(
     {
@@ -179,7 +188,7 @@ export function GeneralDailyReportPage() {
       q: undefined,
       ...(apiStationId != null && apiStationId > 0 ? { filterStationId: apiStationId } : {}),
     },
-    { skip: effectiveBusinessId <= 0 || dateRangeInvalid || needsWorkspaceStation },
+    { skip: skipOperationQueries },
   )
 
   const cashOutLines = cashOutData?.lines ?? []
@@ -190,9 +199,41 @@ export function GeneralDailyReportPage() {
       from: from ?? '',
       to: to ?? '',
       stationId: apiStationId,
+      sideAction: 'Operation',
     },
-    { skip: effectiveBusinessId <= 0 || dateRangeInvalid || needsWorkspaceStation || !from || !to },
+    { skip: skipOperationQueries || !from || !to },
   )
+
+  const { data: managementCashOut, isFetching: managementCashOutLoading } = useGetCashOutDailyReportQuery(
+    {
+      businessId: effectiveBusinessId,
+      from: !dateRangeInvalid && from ? `${from}T00:00:00` : undefined,
+      to: !dateRangeInvalid && to ? `${to}T00:00:00` : undefined,
+      sideAction: 'Management',
+    },
+    { skip: !isManagementTab || effectiveBusinessId <= 0 || dateRangeInvalid },
+  )
+  const managementLines = managementCashOut?.lines ?? []
+  const managementTotals = useMemo(() => {
+    let local = 0
+    let usd = 0
+    let nonUsdAsUsd = 0
+    let totalUsdEquivalent = 0
+    for (const r of managementLines) {
+      const code = (r.currencyCode || 'USD').trim().toUpperCase()
+      const localAmt = Number(r.localAmount) || 0
+      const usdAmt = Number(r.amountUsd) || 0
+      if (code === 'USD') {
+        usd += localAmt
+        totalUsdEquivalent += localAmt
+      } else {
+        local += localAmt
+        nonUsdAsUsd += usdAmt
+        totalUsdEquivalent += usdAmt
+      }
+    }
+    return { local, usd, nonUsdAsUsd, totalUsdEquivalent }
+  }, [managementLines])
   const dailySummary = dailySummaryRaw ?? EMPTY_DAILY_SUMMARY
   const dailySummaryCashOutLines = dailySummaryRaw?.periodCashOut?.lines ?? cashOutLines
 
@@ -204,10 +245,10 @@ export function GeneralDailyReportPage() {
       ...(effectiveBusinessId > 0 ? { filterBusinessId: effectiveBusinessId } : {}),
       ...(apiStationId != null && apiStationId > 0 ? { filterStationId: apiStationId } : {}),
     },
-    { skip: effectiveBusinessId <= 0 || dateRangeInvalid || needsWorkspaceStation },
+    { skip: skipOperationQueries },
   )
   const { data: nozzleRows = [] } = useGetNozzlesByBusinessQuery(effectiveBusinessId, {
-    skip: effectiveBusinessId <= 0 || dateRangeInvalid || needsWorkspaceStation,
+    skip: skipOperationQueries,
   })
   const { data: dippingsData } = useGetDippingsQuery(
     {
@@ -217,7 +258,7 @@ export function GeneralDailyReportPage() {
       businessId: effectiveBusinessId > 0 ? effectiveBusinessId : undefined,
       filterStationId: apiStationId,
     },
-    { skip: effectiveBusinessId <= 0 || dateRangeInvalid || needsWorkspaceStation },
+    { skip: skipOperationQueries },
   )
   const { data: fuelTypes = [] } = useGetFuelTypesQuery()
   const { data: currenciesData } = useGetCurrenciesQuery()
@@ -470,6 +511,89 @@ export function GeneralDailyReportPage() {
     for (const s of stationsData?.items ?? []) out.push({ value: String(s.id), label: s.name })
     return out
   }, [stationsData?.items])
+
+  function handleOpenManagementPdf() {
+    if (dateRangeInvalid || managementLines.length === 0) return
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+    const pageW = doc.internal.pageSize.getWidth()
+    const margin = 48
+    const headerH = 150
+    const today = new Date().toLocaleDateString('en-CA')
+
+    doc.setFillColor(21, 128, 122)
+    doc.rect(0, 0, pageW, headerH, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(26)
+    doc.text((businessName || 'Gas Station').toUpperCase(), pageW / 2, 52, { align: 'center' })
+    doc.setFontSize(14)
+    doc.text('MANAGEMENT REPORT', pageW / 2, 80, { align: 'center' })
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(12)
+    doc.text(`${from || '…'} → ${to || '…'}`, pageW / 2, 125, { align: 'center' })
+
+    let y = headerH + 38
+    doc.setTextColor(31, 41, 55)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(12)
+    y += 14
+    doc.text('Business level (no station)', margin, y)
+    doc.text(today, pageW - margin, y, { align: 'right' })
+    y += 10
+    doc.line(margin, y, pageW - margin, y)
+    y += 24
+
+    const drawFooter = (tableData: { pageNumber: number }) => {
+      const pW = doc.internal.pageSize.getWidth()
+      const pH = doc.internal.pageSize.getHeight()
+      const lineY = pH - 34
+      doc.setDrawColor(21, 128, 122)
+      doc.setLineWidth(1)
+      doc.line(margin, lineY, pW - margin, lineY)
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(10)
+      doc.setTextColor(100, 116, 139)
+      doc.text('Powered by abaalsoftware', margin, lineY + 15)
+      doc.text(`Page | ${tableData.pageNumber}`, pW - margin, lineY + 15, { align: 'right' })
+    }
+
+    doc.setFont('helvetica', 'bold')
+    doc.text('Management Cash Out (Expenses & Exchanges)', margin, y, { align: 'left' })
+    autoTable(doc, {
+      startY: y + 6,
+      head: [['Date', 'Kind', 'Description', 'Currency', 'Amount', 'Rate', 'USD']],
+      body: managementLines.map((r) => {
+        const code = (r.currencyCode || 'USD').toUpperCase()
+        const isUsd = code === 'USD'
+        return [
+          r.date,
+          r.kind || '—',
+          r.description || '—',
+          code,
+          formatDecimal(r.localAmount),
+          isUsd ? '—' : r.rate > 1e-9 ? formatDecimal(r.rate) : '—',
+          isUsd ? `$${formatDecimal(r.localAmount)}` : `$${formatDecimal(r.amountUsd)}`,
+        ]
+      }),
+      foot: [
+        [
+          { content: 'Totals', colSpan: 4, styles: { halign: 'right' } },
+          formatDecimal(managementTotals.local + managementTotals.usd),
+          '—',
+          `$${formatDecimal(managementTotals.totalUsdEquivalent)}`,
+        ],
+      ],
+      showFoot: 'lastPage',
+      styles: { fontSize: 9, cellPadding: 4, textColor: [31, 41, 55] },
+      headStyles: { fillColor: [241, 245, 249], textColor: [31, 41, 55], fontStyle: 'bold' },
+      footStyles: { fillColor: false, textColor: [6, 78, 59], fontStyle: 'bold', lineColor: [203, 213, 225], lineWidth: 0.6 },
+      theme: 'grid',
+      margin: { left: margin, right: margin, bottom: 60 },
+      didDrawPage: drawFooter,
+    })
+
+    openPdfInNewTab(doc)
+  }
 
   function handleOpenPdf() {
     if (dateRangeInvalid) return
@@ -810,18 +934,57 @@ export function GeneralDailyReportPage() {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">General daily report</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Includes customer given fuel. Cash out details are inside Daily summary.
+            {isOperationTab
+              ? 'Station operations: cash sales, fuel given, inventory, dipping and operation cash-out.'
+              : 'Business-level expenses & exchanges that do not affect station operations.'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleOpenPdf}
-          disabled={dateRangeInvalid || !hasAnyReportData}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <FileText className="h-4 w-4" />
-          Open PDF
-        </button>
+        {isOperationTab ? (
+          <button
+            type="button"
+            onClick={handleOpenPdf}
+            disabled={dateRangeInvalid || !hasAnyReportData}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FileText className="h-4 w-4" />
+            Open PDF
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleOpenManagementPdf}
+            disabled={dateRangeInvalid || managementLines.length === 0}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FileText className="h-4 w-4" />
+            Open PDF
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-1 border-b border-slate-200">
+        {(
+          [
+            { id: 'operation' as const, label: 'Operation Report' },
+            { id: 'management' as const, label: 'Management Report' },
+          ]
+        ).map((t) => {
+          const active = tab === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`-mb-px rounded-t-lg border border-b-0 px-4 py-2 text-sm font-medium transition ${
+                active
+                  ? 'border-slate-200 bg-white text-emerald-700 shadow-sm'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {t.label}
+            </button>
+          )
+        })}
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -846,7 +1009,7 @@ export function GeneralDailyReportPage() {
           <label className="mb-1 block text-xs font-medium text-slate-600">To</label>
           <input type="date" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
-        {showStationPicker && (
+        {isOperationTab && showStationPicker && (
           <div className="min-w-[180px] flex-1">
             <label className="mb-1 block text-xs font-medium text-slate-600">Station</label>
             <FormSelect
@@ -859,13 +1022,83 @@ export function GeneralDailyReportPage() {
         )}
       </div>
 
-      {needsWorkspaceStation && (
+      {isOperationTab && needsWorkspaceStation && (
         <p className="text-sm text-amber-800">
           {showSettingsStationHint ? SETTINGS_STATION_HINT : 'Your account has no station assigned. Contact an administrator.'}
         </p>
       )}
       {dateRangeInvalid && <p className="text-sm text-amber-700">&quot;From&quot; must be on or before &quot;To&quot;.</p>}
 
+      {isManagementTab ? (
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
+            <span className="text-sm font-semibold text-slate-800">Management cash out (expenses & exchanges)</span>
+            <span className="text-xs text-slate-500">Business-level entries only — no station scoping</span>
+          </div>
+          <div className="max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+            <table className="w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Date</th>
+                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Kind</th>
+                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Description</th>
+                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Currency</th>
+                  <th className="px-4 py-2 text-right font-semibold text-slate-700">Amount</th>
+                  <th className="px-4 py-2 text-right font-semibold text-slate-700">Rate</th>
+                  <th className="px-4 py-2 text-right font-semibold text-slate-700">USD</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {managementLines.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                      {managementCashOutLoading ? 'Loading…' : 'No management entries in the selected range.'}
+                    </td>
+                  </tr>
+                )}
+                {managementLines.map((r) => {
+                  const code = (r.currencyCode || 'USD').toUpperCase()
+                  const isUsd = code === 'USD'
+                  return (
+                    <tr key={r.id}>
+                      <td className="px-4 py-2 whitespace-nowrap">{r.date}</td>
+                      <td className="px-4 py-2">{r.kind || '—'}</td>
+                      <td className="px-4 py-2">{r.description || '—'}</td>
+                      <td className="px-4 py-2">{code}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{formatDecimal(r.localAmount)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {isUsd ? '—' : r.rate > 1e-9 ? formatDecimal(r.rate) : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums font-medium">
+                        {isUsd ? `$${formatDecimal(r.localAmount)}` : `$${formatDecimal(r.amountUsd)}`}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              {managementLines.length > 0 && (
+                <tfoot className="border-t border-slate-300 bg-emerald-50/50">
+                  <tr>
+                    <td colSpan={4} className="px-4 py-2 text-right font-semibold text-slate-900">
+                      Totals
+                    </td>
+                    <td className="px-4 py-2 text-right font-bold tabular-nums text-slate-900">
+                      {formatDecimal(managementTotals.local + managementTotals.usd)}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-slate-500">—</td>
+                    <td className="px-4 py-2 text-right font-bold tabular-nums text-emerald-900">
+                      ${formatDecimal(managementTotals.totalUsdEquivalent)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {isOperationTab && (
+      <>
       <div className="max-w-full rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
           <span className="text-sm font-semibold text-slate-800">Daily cash sales</span>
@@ -1404,6 +1637,8 @@ export function GeneralDailyReportPage() {
         </table>
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }

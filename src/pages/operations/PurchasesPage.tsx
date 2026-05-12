@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Eye, Printer, Trash2 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
@@ -25,7 +25,6 @@ import { openPurchaseInvoicePdf } from '../../lib/purchaseInvoicePdf'
 import type { Purchase, PurchaseHeaderWriteRequest, PurchaseLineWrite, PurchaseWriteRequest } from '../../types/models'
 
 type FormLine = PurchaseLineWrite & { rid: number }
-type PurchaseStatus = 'Paid' | 'Half-paid' | 'Unpaid'
 
 function stripLine(l: FormLine): PurchaseLineWrite {
   const { rid: _r, ...rest } = l
@@ -168,29 +167,12 @@ export function PurchasesPage() {
   const [editing, setEditing] = useState<Purchase | null>(null)
   const [supplierId, setSupplierId] = useState(0)
   const [invoiceNo, setInvoiceNo] = useState('')
-  const [status, setStatus] = useState<PurchaseStatus>('Unpaid')
-  const [amountPaid, setAmountPaid] = useState('0')
   const [purchaseDate, setPurchaseDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [autoSaveBusinessPool, setAutoSaveBusinessPool] = useState(false)
   const [lines, setLines] = useState<FormLine[]>([])
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
   const supplierSel = supplierOptions.find((o) => o.value === String(supplierId)) ?? null
-  const statusOptions: SelectOption[] = useMemo(
-    () => [
-      { value: 'Unpaid', label: 'Unpaid' },
-      { value: 'Half-paid', label: 'Half-paid' },
-      { value: 'Paid', label: 'Paid' },
-    ],
-    [],
-  )
-  const statusSel = statusOptions.find((o) => o.value === status) ?? null
-  const showAmountPaid = status !== 'Unpaid'
-
-  useEffect(() => {
-    if (status === 'Unpaid') setAmountPaid('0')
-  }, [status])
-
   const needsBusiness = showBizPicker ? formBusinessId == null || formBusinessId <= 0 : authBusinessId == null
 
   const linesSubtotal = useMemo(
@@ -202,11 +184,9 @@ export function PurchasesPage() {
   )
 
   const headerOk = !needsBusiness && supplierId > 0 && invoiceNo.trim().length > 0
-  const paidAmountOk =
-    status === 'Unpaid' || (Number.parseFloat(String(amountPaid).replace(',', '.')) || 0) > 0
   const hasCompleteLine = lines.some((l) => isLineComplete(stripLine(l)))
-  const canSaveCreate = headerOk && paidAmountOk && hasCompleteLine && fuelTypes.length > 0
-  const canSaveEdit = headerOk && paidAmountOk
+  const canSaveCreate = headerOk && hasCompleteLine && fuelTypes.length > 0
+  const canSaveEdit = headerOk
   const canSave = editing ? canSaveEdit : canSaveCreate
 
   function openCreate() {
@@ -214,8 +194,6 @@ export function PurchasesPage() {
     if (showBizPicker) setFormBusinessId(null)
     setSupplierId(0)
     setInvoiceNo('')
-    setStatus('Unpaid')
-    setAmountPaid('0')
     setPurchaseDate(new Date().toISOString().slice(0, 10))
     setAutoSaveBusinessPool(false)
     setLines([emptyLine(nextLineRid())])
@@ -227,8 +205,6 @@ export function PurchasesPage() {
     if (showBizPicker) setFormBusinessId(row.businessId)
     setSupplierId(row.supplierId)
     setInvoiceNo(row.invoiceNo)
-    setStatus((row.status || 'Unpaid') as PurchaseStatus)
-    setAmountPaid(String(row.amountPaid ?? 0))
     setPurchaseDate(row.purchaseDate ? row.purchaseDate.slice(0, 10) : new Date().toISOString().slice(0, 10))
     setLines([])
     setOpen(true)
@@ -258,8 +234,6 @@ export function PurchasesPage() {
       supplierId,
       invoiceNo: invoiceNo.trim(),
       purchaseDate: new Date(purchaseDate + 'T12:00:00').toISOString(),
-      status,
-      amountPaid: status === 'Unpaid' ? '0' : amountPaid,
       ...(showBizPicker && formBusinessId != null ? { businessId: formBusinessId } : {}),
     }
     try {
@@ -335,12 +309,6 @@ export function PurchasesPage() {
         key: 'purchaseDate',
         header: 'Date',
         render: (r) => (r.purchaseDate ? new Date(r.purchaseDate).toLocaleDateString() : '—'),
-      },
-      { key: 'status', header: 'Status' },
-      {
-        key: 'amountPaid',
-        header: 'Amount paid',
-        render: (r) => Number(r.amountPaid ?? 0).toFixed(2),
       },
     ]
     if (!isSuperAdmin) return base
@@ -479,28 +447,6 @@ export function PurchasesPage() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-emerald-500/30 focus:ring-2 disabled:bg-slate-50"
               />
             </div>
-            <div className={!showAmountPaid ? 'md:col-span-2' : undefined}>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
-              <FormSelect
-                options={statusOptions}
-                value={statusSel}
-                onChange={(o) => setStatus((o?.value as PurchaseStatus) ?? 'Unpaid')}
-                placeholder="Select status"
-                isDisabled={saving}
-              />
-            </div>
-            {showAmountPaid ? (
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Amount paid</label>
-                <input
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
-                  disabled={saving}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-emerald-500/30 focus:ring-2 disabled:bg-slate-50"
-                  inputMode="decimal"
-                />
-              </div>
-            ) : null}
           </div>
 
           <div>

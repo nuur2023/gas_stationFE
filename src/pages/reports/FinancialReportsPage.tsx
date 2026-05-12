@@ -90,6 +90,28 @@ function entryViewReportTitle(
   return `${cap} income statement`
 }
 
+/** Cash-flow `lineKey` sets for Report period view (must match backend `DirectCashFlowDetailRow.LineKey`). */
+const PERIOD_CF_OPERATING_KEYS = new Set([
+  'sales',
+  'operatingOtherInflow',
+  'prepaidRent',
+  'salaries',
+  'operatingUtilities',
+  'operatingStationery',
+  'operatingSuppliesExpense',
+  'operatingOtherOutflow',
+  'operatingInventory',
+  'operatingOfficeSupplies',
+])
+const PERIOD_CF_INVESTING_KEYS = new Set(['equipment'])
+const PERIOD_CF_FINANCING_KEYS = new Set(['ownerInvestment', 'loansReceived', 'financingOther'])
+
+function sortPeriodCfDetailRows<T extends { accountCode?: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) =>
+    String(a.accountCode ?? '').localeCompare(String(b.accountCode ?? ''), undefined, { numeric: true, sensitivity: 'base' }),
+  )
+}
+
 function signedLedgerAmountClass(value: number): string {
   if (!Number.isFinite(value)) return 'text-slate-500'
   if (value > 0) return 'text-green-600'
@@ -316,7 +338,9 @@ export function FinancialReportsPage() {
       kind !== 'period-view'
     )
       return null
-    return parseFinancialEntryViewParam(searchParams.get('view')) ?? 'adjusted'
+    return (
+      parseFinancialEntryViewParam(searchParams.get('view')) ?? (kind === 'period-view' ? 'postclosing' : 'adjusted')
+    )
   }, [kind, searchParams])
 
   const setFinancialEntryView = useCallback(
@@ -831,13 +855,41 @@ export function FinancialReportsPage() {
   const plPeriodLabel = formatReportPeriod(from, to)
   const bsPeriodLabel = formatReportPeriod('', bsAsOf)
   const periodViewCashFlowRows = useMemo(() => {
-    const incomeTotal = Number(periodView.data?.cashFlowStatement?.cashReceivedFromFuelSales ?? 0)
-    const expenseTotal = Number(periodView.data?.cashFlowStatement?.cashPaidForExpense ?? 0)
-    const netOperating = Number(periodView.data?.cashFlowStatement?.netCashFromOperating ?? incomeTotal - expenseTotal)
+    const cashFlow = periodView.data?.cashFlowStatement
+    const directDetails = cashFlow?.directDetails ?? []
+    const hasDirect = cashFlow?.method === 'direct' || directDetails.length > 0
+
+    const netOperating = Number(cashFlow?.netCashFromOperating ?? 0)
+    const netInvesting = Number(cashFlow?.netCashFromInvesting ?? 0)
+    const netFinancing = Number(cashFlow?.netCashFromFinancing ?? 0)
+    const openingCash = Number(cashFlow?.openingCashBalance ?? 0)
+    const netChange = Number(
+      cashFlow?.netIncreaseInCash ?? netOperating + netInvesting + netFinancing,
+    )
+    const endingCash = Number(cashFlow?.endingCashBalance ?? openingCash + netChange)
+
+    const cfOperatingRows = sortPeriodCfDetailRows(
+      directDetails.filter((r) => PERIOD_CF_OPERATING_KEYS.has(r.lineKey)),
+    )
+    const cfInvestingRows = sortPeriodCfDetailRows(
+      directDetails.filter((r) => PERIOD_CF_INVESTING_KEYS.has(r.lineKey)),
+    )
+    const cfFinancingRows = sortPeriodCfDetailRows(
+      directDetails.filter((r) => PERIOD_CF_FINANCING_KEYS.has(r.lineKey)),
+    )
+
     return {
-      incomeTotal,
-      expenseTotal,
+      hasDirect,
+      directDetails,
+      cfOperatingRows,
+      cfInvestingRows,
+      cfFinancingRows,
       netOperating,
+      netInvesting,
+      netFinancing,
+      netChange,
+      endingCash,
+      openingCash,
     }
   }, [periodView.data])
   const ledgerRows = useMemo(() => {
@@ -1235,8 +1287,16 @@ export function FinancialReportsPage() {
     doc.setFontSize(10)
     doc.setTextColor(71, 85, 105)
     doc.text(formatReportPeriod(from, to), margin, 62)
+    const periodExportEntryView = financialEntryView ?? 'adjusted'
+    const periodExportEntryLabel =
+      periodExportEntryView === 'postclosing'
+        ? 'Post-closing'
+        : periodExportEntryView === 'adjusted'
+          ? 'Adjusted'
+          : 'Unadjusted'
+    doc.text(`Entry view: ${periodExportEntryLabel}`, margin, 76)
 
-    let y = 82
+    let y = 90
     const bottomSafeY = pageH - 60
     const ensureSpace = (estimatedHeight: number) => {
       if (y + estimatedHeight <= bottomSafeY) return
@@ -1285,6 +1345,7 @@ export function FinancialReportsPage() {
       const assetRows = periodView.data.balanceSheet?.assets ?? []
       const liabilityRows = periodView.data.balanceSheet?.liabilities ?? []
       const equityRows = periodView.data.balanceSheet?.equity ?? []
+      const pdfBsNetIncome = Number(periodView.data.balanceSheet?.netIncome ?? 0)
       const estimatedRows = assetRows.length + liabilityRows.length + equityRows.length + 8
       ensureSpace(Math.max(200, estimatedRows * 18))
       y = addPdfSectionTitle(doc, 'Balance Sheet', y, margin)
@@ -1302,7 +1363,7 @@ export function FinancialReportsPage() {
       for (const row of equityRows) {
         balanceSheetBody.push([`${row.code} - ${row.name}`, formatDecimal(row.balance)])
       }
-      balanceSheetBody.push(['Net Income', formatDecimal(periodView.data.balanceSheet?.netIncome ?? 0)])
+      balanceSheetBody.push(['Net Income', formatDecimal(pdfBsNetIncome)])
       balanceSheetBody.push(['Total Equity', formatDecimal(periodView.data.balanceSheet?.totalEquity ?? 0)])
       autoTable(doc, {
         startY: y,
@@ -1317,22 +1378,31 @@ export function FinancialReportsPage() {
     }
 
     if (periodIncludeCashFlow && periodView.data) {
-      const receivedRows = periodView.data.cashFlowStatement?.receivedAccounts ?? []
-      const paidRows = periodView.data.cashFlowStatement?.paidAccounts ?? []
-      const estimatedRows = receivedRows.length + paidRows.length + 8
-      ensureSpace(Math.max(150, estimatedRows * 18))
+      const cf = periodViewCashFlowRows
+      const lineCount = 2 + cf.cfOperatingRows.length + cf.cfInvestingRows.length + cf.cfFinancingRows.length + 5
+      ensureSpace(Math.max(150, lineCount * 14))
       y = addPdfSectionTitle(doc, 'Cash Flow Statement', y, margin)
       const cashFlowBody: Array<Array<string | number>> = []
       cashFlowBody.push(['Operating Activities', ''])
-      for (const row of receivedRows) {
-        cashFlowBody.push([`Cash in: ${row.code} - ${row.name}`, formatDecimal(row.amount)])
+      for (const r of cf.cfOperatingRows) {
+        const label = r.accountCode ? `${r.accountCode} · ${r.accountName}` : r.accountName
+        cashFlowBody.push([label, formatDecimal(r.amount)])
       }
-      cashFlowBody.push(['Cash received from fuel sales', formatDecimal(periodViewCashFlowRows.incomeTotal)])
-      for (const row of paidRows) {
-        cashFlowBody.push([`Cash out: ${row.code} - ${row.name}`, formatDecimal(row.amount)])
+      cashFlowBody.push(['Net Cash from Operating', formatDecimal(cf.netOperating)])
+      cashFlowBody.push(['Investing Activities', ''])
+      for (const r of cf.cfInvestingRows) {
+        const label = r.accountCode ? `${r.accountCode} · ${r.accountName}` : r.accountName
+        cashFlowBody.push([label, formatDecimal(r.amount)])
       }
-      cashFlowBody.push(['Cash paid for expense', formatDecimal(periodViewCashFlowRows.expenseTotal)])
-      cashFlowBody.push(['Net Cash from Operating', formatDecimal(periodViewCashFlowRows.netOperating)])
+      cashFlowBody.push(['Net Cash from Investing', formatDecimal(cf.netInvesting)])
+      cashFlowBody.push(['Financing Activities', ''])
+      for (const r of cf.cfFinancingRows) {
+        const label = r.accountCode ? `${r.accountCode} · ${r.accountName}` : r.accountName
+        cashFlowBody.push([label, formatDecimal(r.amount)])
+      }
+      cashFlowBody.push(['Net Cash from Financing', formatDecimal(cf.netFinancing)])
+      cashFlowBody.push(['Net Increase in Cash', formatDecimal(cf.netChange)])
+      cashFlowBody.push(['Ending Cash Balance', formatDecimal(cf.endingCash)])
       autoTable(doc, {
         startY: y,
         head: [['Description', 'Amount ($)']],
@@ -1712,6 +1782,7 @@ export function FinancialReportsPage() {
 
   if (kind === 'period-view') {
     const periodEntryView = financialEntryView ?? 'adjusted'
+    const periodViewBsNetIncomeRow = Number(periodView.data?.balanceSheet?.netIncome ?? 0)
     const selectedClosedPeriod = periodViewClosedPeriods.find((p) => p.key === periodViewClosedPeriod) ?? null
     return (
       <div className="space-y-4">
@@ -1938,7 +2009,7 @@ export function FinancialReportsPage() {
                     ))}
                     <tr className="border-t">
                       <td className="px-4 py-2 font-bold text-green-600">Net Income</td>
-                      <td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodView.data?.balanceSheet?.netIncome ?? 0)}</td>
+                      <td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodViewBsNetIncomeRow)}</td>
                     </tr>
                     <tr className="border-t">
                       <td className="px-4 py-2 font-bold text-slate-800">Total Equity</td>
@@ -1961,21 +2032,37 @@ export function FinancialReportsPage() {
                   </thead>
                   <tbody>
                     <tr className="border-t"><td className="px-4 py-2 font-bold text-slate-800">Operating Activities</td><td className="px-4 py-2" /></tr>
-                    {(periodView.data?.cashFlowStatement?.receivedAccounts ?? []).map((row) => (
-                      <tr className="border-t" key={`pv-cf-in-${row.code}`}>
-                        <td className="px-4 py-2 pl-8 font-semibold text-slate-800">Cash in: {row.code} - {row.name}</td>
-                        <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.amount)}</td>
+                    {periodViewCashFlowRows.cfOperatingRows.map((r, i) => (
+                      <tr key={`cf-op-r-${i}`} className="border-t">
+                        <td className="px-4 py-2 pl-6 text-slate-800">
+                          {r.accountCode ? `${r.accountCode} · ${r.accountName}` : r.accountName}
+                        </td>
+                        <td className="px-4 py-2 text-slate-800">{formatDecimal(r.amount)}</td>
                       </tr>
                     ))}
-                    <tr className="border-t"><td className="px-4 py-2 pl-8 font-semibold text-slate-800">Cash received from fuel sales</td><td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(periodViewCashFlowRows.incomeTotal)}</td></tr>
-                    {(periodView.data?.cashFlowStatement?.paidAccounts ?? []).map((row) => (
-                      <tr className="border-t" key={`pv-cf-out-${row.code}`}>
-                        <td className="px-4 py-2 pl-8 font-semibold text-slate-800">Cash out: {row.code} - {row.name}</td>
-                        <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.amount)}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t"><td className="px-4 py-2 pl-8 font-semibold text-slate-800">Cash paid for expense</td><td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(periodViewCashFlowRows.expenseTotal)}</td></tr>
                     <tr className="border-t"><td className="px-4 py-2 font-bold text-green-600">Net Cash from Operating</td><td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodViewCashFlowRows.netOperating)}</td></tr>
+                    <tr className="border-t"><td className="px-4 py-2 font-bold text-slate-800">Investing Activities</td><td className="px-4 py-2" /></tr>
+                    {periodViewCashFlowRows.cfInvestingRows.map((r, i) => (
+                      <tr key={`cf-inv-r-${i}`} className="border-t">
+                        <td className="px-4 py-2 pl-6 text-slate-800">
+                          {r.accountCode ? `${r.accountCode} · ${r.accountName}` : r.accountName}
+                        </td>
+                        <td className="px-4 py-2 text-slate-800">{formatDecimal(r.amount)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t"><td className="px-4 py-2 font-bold text-green-600">Net Cash from Investing</td><td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodViewCashFlowRows.netInvesting)}</td></tr>
+                    <tr className="border-t"><td className="px-4 py-2 font-bold text-slate-800">Financing Activities</td><td className="px-4 py-2" /></tr>
+                    {periodViewCashFlowRows.cfFinancingRows.map((r, i) => (
+                      <tr key={`cf-fin-r-${i}`} className="border-t">
+                        <td className="px-4 py-2 pl-6 text-slate-800">
+                          {r.accountCode ? `${r.accountCode} · ${r.accountName}` : r.accountName}
+                        </td>
+                        <td className="px-4 py-2 text-slate-800">{formatDecimal(r.amount)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t"><td className="px-4 py-2 font-bold text-green-600">Net Cash from Financing</td><td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodViewCashFlowRows.netFinancing)}</td></tr>
+                    <tr className="border-t"><td className="px-4 py-2 font-bold text-green-600">Net Increase in Cash</td><td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodViewCashFlowRows.netChange)}</td></tr>
+                    <tr className="border-t"><td className="px-4 py-2 font-bold text-green-600">Ending Cash Balance</td><td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodViewCashFlowRows.endingCash)}</td></tr>
                   </tbody>
                 </table>
               </div>

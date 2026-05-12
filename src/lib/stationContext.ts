@@ -14,6 +14,11 @@ export function showStationPickerInForms(role: string | null): boolean {
   return role === 'SuperAdmin'
 }
 
+/** SuperAdmin and Admin: pick station scope on payroll run screen (filters employees). */
+export function showPayrollStationScopePicker(role: string | null): boolean {
+  return role === 'SuperAdmin' || role === 'Admin'
+}
+
 /** Data tables: Business column — SuperAdmin only (Admin and below never). */
 export function showBusinessColumnInTables(role: string | null): boolean {
   return role === 'SuperAdmin'
