@@ -27,6 +27,8 @@ export function BusinessesPage() {
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
+  const [isActive, setIsActive] = useState(true)
+  const [isSupportPool, setIsSupportPool] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
   function openCreate() {
@@ -34,6 +36,8 @@ export function BusinessesPage() {
     setName('')
     setAddress('')
     setPhoneNumber('')
+    setIsActive(true)
+    setIsSupportPool(true)
     setOpen(true)
   }
 
@@ -42,15 +46,20 @@ export function BusinessesPage() {
     setName(row.name)
     setAddress(row.address ?? '')
     setPhoneNumber(row.phoneNumber ?? '')
+    setIsActive(row.isActive !== false)
+    setIsSupportPool(row.isSupportPool !== false)
     setOpen(true)
   }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (editing) {
-      await updateBusiness({ id: editing.id, body: { ...editing, name, address, phoneNumber } }).unwrap()
+      await updateBusiness({
+        id: editing.id,
+        body: { ...editing, name, address, phoneNumber, isActive, isSupportPool },
+      }).unwrap()
     } else {
-      await createBusiness({ name, address, phoneNumber }).unwrap()
+      await createBusiness({ name, address, phoneNumber, isActive, isSupportPool }).unwrap()
     }
     setOpen(false)
     setSelected(new Set())
@@ -111,6 +120,16 @@ export function BusinessesPage() {
           { key: 'name', header: 'Name' },
           { key: 'address', header: 'Address' },
           { key: 'phoneNumber', header: 'Phone' },
+          {
+            key: 'isActive',
+            header: 'Active',
+            render: (row) => (row.isActive !== false ? 'Yes' : 'No'),
+          },
+          {
+            key: 'isSupportPool',
+            header: 'Pool',
+            render: (row) => (row.isSupportPool !== false ? 'Yes' : 'No'),
+          },
         ]}
       />
       <Modal open={open} title={editing ? 'Edit business' : 'Add business'} onClose={() => setOpen(false)}>
@@ -139,6 +158,21 @@ export function BusinessesPage() {
               onChange={(e) => setPhoneNumber(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-emerald-500/30 focus:ring-2"
             />
+          </div>
+          <div className="flex flex-col gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-800">
+              <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="h-4 w-4" />
+              Business is active (stations can sign in)
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-800">
+              <input
+                type="checkbox"
+                checked={isSupportPool}
+                onChange={(e) => setIsSupportPool(e.target.checked)}
+                className="h-4 w-4"
+              />
+              Supports fuel pool and transfers
+            </label>
           </div>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">

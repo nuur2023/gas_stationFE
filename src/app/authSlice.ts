@@ -12,6 +12,8 @@ export interface AuthState {
   businessId: number | null
   stationId: number | null
   selectedStationId: number | null
+  /** JWT business: fuel pool / transfer menus; false when business does not support pooling */
+  supportsPool: boolean
 }
 
 function loadFromStorage(): AuthState {
@@ -27,6 +29,7 @@ function loadFromStorage(): AuthState {
         businessId: null,
         stationId: null,
         selectedStationId: null,
+        supportsPool: true,
       }
     const parsed = JSON.parse(raw) as AuthState & { userName?: string | null }
     return {
@@ -38,9 +41,20 @@ function loadFromStorage(): AuthState {
       businessId: parsed.businessId ?? null,
       stationId: parsed.stationId ?? null,
       selectedStationId: (parsed as AuthState).selectedStationId ?? null,
+      supportsPool: (parsed as AuthState).supportsPool !== false,
     }
   } catch {
-    return { token: null, userId: null, name: null, email: null, role: null, businessId: null, stationId: null, selectedStationId: null }
+    return {
+      token: null,
+      userId: null,
+      name: null,
+      email: null,
+      role: null,
+      businessId: null,
+      stationId: null,
+      selectedStationId: null,
+      supportsPool: true,
+    }
   }
 }
 
@@ -64,7 +78,12 @@ const authSlice = createSlice({
     },
     logout() {
       localStorage.removeItem(STORAGE_KEY)
-      return { token: null, userId: null, name: null, email: null, role: null, businessId: null, stationId: null, selectedStationId: null }
+      return { token: null, userId: null, name: null, email: null, role: null, businessId: null, stationId: null, selectedStationId: null, supportsPool: true }
+    },
+    setSupportsPool(state, action: PayloadAction<boolean>) {
+      const next = { ...state, supportsPool: action.payload }
+      saveToStorage(next)
+      return next
     },
     setSelectedStationId(state, action: PayloadAction<number | null>) {
       const next = { ...state, selectedStationId: action.payload }
@@ -74,5 +93,5 @@ const authSlice = createSlice({
   },
 })
 
-export const { setCredentials, logout, setSelectedStationId } = authSlice.actions
+export const { setCredentials, logout, setSelectedStationId, setSupportsPool } = authSlice.actions
 export default authSlice.reducer

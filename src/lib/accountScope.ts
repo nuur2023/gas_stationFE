@@ -47,9 +47,7 @@ export function filterBusinessLeafAccounts(items: Account[]): Account[] {
 }
 
 /**
- * Manual journal line picker: business-scoped posting accounts (have a parent) plus
- * Admin/Accountant "temporary" top-level accounts (same business, null parent).
- * When `resolvedBusinessId` is set, only accounts for that business are included (including temps).
+ * Manual journal line picker: business-scoped posting accounts (have a parent).
  */
 export function filterJournalPostingAccountPicker(
   items: Account[] | undefined,
@@ -59,17 +57,9 @@ export function filterJournalPostingAccountPicker(
   const bid = resolvedBusinessId != null && resolvedBusinessId > 0 ? resolvedBusinessId : null
   return list.filter((a) => {
     const isPostingLeaf = a.parentAccountId != null && a.parentAccountId > 0
-    const isTemporaryBusinessAccount =
-      a.businessId != null && a.businessId > 0 && a.parentAccountId == null
-
-    if (isPostingLeaf) {
-      if (a.businessId == null) return false
-      if (bid != null && a.businessId !== bid) return false
-      return true
-    }
-    if (isTemporaryBusinessAccount) {
-      return bid != null && a.businessId === bid
-    }
-    return false
+    if (!isPostingLeaf) return false
+    if (a.businessId == null) return false
+    if (bid != null && a.businessId !== bid) return false
+    return true
   })
 }

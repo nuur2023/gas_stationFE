@@ -1,15 +1,18 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   useCreateMenuMutation,
   useCreateSubMenuMutation,
   useDeleteMenuMutation,
+  useGetBusinessesQuery,
   useGetMenusQuery,
   useGetSubMenusQuery,
   useLazyGetMenusQuery,
   useLazyGetSubMenusQuery,
   useUpdateMenuMutation,
 } from '../../app/api/apiSlice'
+import { useAppSelector } from '../../app/hooks'
 import { DataTable } from '../../components/DataTable'
+import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { Modal } from '../../components/Modal'
 import { useDeleteConfirm } from '../../hooks/useDeleteConfirm'
 import { cn } from '../../lib/cn'
@@ -59,6 +62,19 @@ function isDefaultNavSatisfied(menus: Menu[], subs: SubMenu[], nav: NavBlock[]):
     }
   }
   return true
+}
+
+const POOL_DEFAULT_SUBMENU_ROUTES = new Set(['/fuel-inventory', '/transfers', '/transfer-audit-trail'])
+
+function filterDefaultNavForPoolSupport(nav: NavBlock[], supportsPool: boolean): NavBlock[] {
+  if (supportsPool) return nav
+  return nav.map((block) => {
+    if (!routesEqual(block.menu.route, '/management')) return block
+    return {
+      ...block,
+      submenus: block.submenus.filter((sm) => !POOL_DEFAULT_SUBMENU_ROUTES.has(sm.route.trim().split('?')[0].toLowerCase())),
+    }
+  })
 }
 
 /** Matches app sidebar: Operations, Management, Administration, Reports, Accounting, Financial Report, Main setup. */
@@ -131,6 +147,7 @@ const DEFAULT_NAV: NavBlock[] = [
   {
     menu: { name: 'Accounting', route: '/accounting' },
     submenus: [
+      { name: 'Dashboard', route: '/accounting/dashboard' },
       { name: 'Accounts', route: '/accounting/accounts' },
       { name: 'COA tree', route: '/accounting/chart-of-accounts-tree' },
       { name: 'Charts of accounts', route: '/accounting/charts-of-accounts' },
@@ -190,6 +207,39 @@ const DEFAULT_NAV: NavBlock[] = [
 ]
 
 export function MenusPage() {
+  const role = useAppSelector((s) => s.auth.role)
+  const authSupportsPool = useAppSelector((s) => s.auth.supportsPool)
+  const isSuperAdmin = role === 'SuperAdmin'
+
+  const { data: businessesForNav } = useGetBusinessesQuery(
+    { page: 1, pageSize: 500, q: undefined },
+    { skip: !isSuperAdmin },
+  )
+  const [menuGenBusinessId, setMenuGenBusinessId] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    const items = businessesForNav?.items ?? []
+    if (items.length === 0) return
+    setMenuGenBusinessId((prev) => {
+      if (prev != null && items.some((b) => b.id === prev)) return prev
+      return items[0].id
+    })
+  }, [isSuperAdmin, businessesForNav?.items])
+
+  const selectedBizSupportsPool = useMemo(() => {
+    if (isSuperAdmin) {
+      const b = (businessesForNav?.items ?? []).find((x) => x.id === menuGenBusinessId)
+      return b?.isSupportPool !== false
+    }
+    return authSupportsPool !== false
+  }, [isSuperAdmin, businessesForNav?.items, menuGenBusinessId, authSupportsPool])
+
+  const effectiveDefaultNav = useMemo(
+    () => filterDefaultNavForPoolSupport(DEFAULT_NAV, selectedBizSupportsPool),
+    [selectedBizSupportsPool],
+  )
+
   const { requestDelete, dialog: confirmDialog } = useDeleteConfirm()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
@@ -220,8 +270,8 @@ export function MenusPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
   const defaultNavComplete = useMemo(
-    () => isDefaultNavSatisfied(menusForGen?.items ?? [], subMenusForGen?.items ?? [], DEFAULT_NAV),
-    [menusForGen?.items, subMenusForGen?.items],
+    () => isDefaultNavSatisfied(menusForGen?.items ?? [], subMenusForGen?.items ?? [], effectiveDefaultNav),
+    [menusForGen?.items, subMenusForGen?.items, effectiveDefaultNav],
   )
 
   function handleGenerate() {
@@ -236,7 +286,7 @@ export function MenusPage() {
         const existingMenus = await fetchAllPaged((args) => fetchMenusPage(args).unwrap())
         let existingSubs = await fetchAllPaged((args) => fetchSubMenusPage(args).unwrap())
 
-        for (const block of DEFAULT_NAV) {
+        for (const block of effectiveDefaultNav) {
           let menu = existingMenus.find((x) => routesEqual(x.route, block.menu.route))
           if (!menu) {
             menu = await createMenu({ name: block.menu.name, route: block.menu.route.trim() }).unwrap()
@@ -315,6 +365,11 @@ export function MenusPage() {
     })
   }
 
+  const menuGenBusinessOptions: SelectOption[] = useMemo(
+    () => (businessesForNav?.items ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+    [businessesForNav?.items],
+  )
+
   return (
     <>
       {confirmDialog}
@@ -337,24 +392,40 @@ export function MenusPage() {
         onDeleteOne={handleDeleteOne}
         onDeleteSelected={handleDeleteSelected}
         extraToolbar={
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={defaultNavComplete}
-            title={
-              defaultNavComplete
-                ? 'Default menus and submenus are already present'
-                : 'Add any missing default menu and submenu rows'
-            }
-            className={cn(
-              'rounded-lg border px-3 py-2 text-sm font-medium',
-              defaultNavComplete
-                ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100',
-            )}
-          >
-            {defaultNavComplete ? 'Default navigation ready' : 'Generate default'}
-          </button>
+          <div className="flex flex-wrap items-end gap-3">
+            {isSuperAdmin && menuGenBusinessOptions.length > 0 ? (
+              <div className="min-w-[12rem]">
+                <label htmlFor="menus-default-nav-business" className="mb-1 block text-xs font-medium text-slate-600">
+                  Business (default nav)
+                </label>
+                <FormSelect
+                  inputId="menus-default-nav-business"
+                  options={menuGenBusinessOptions}
+                  value={menuGenBusinessOptions.find((o) => o.value === String(menuGenBusinessId ?? '')) ?? null}
+                  onChange={(o) => setMenuGenBusinessId(o ? Number(o.value) : null)}
+                  placeholder="Select business…"
+                />
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={defaultNavComplete}
+              title={
+                defaultNavComplete
+                  ? 'Default menus and submenus are already present'
+                  : 'Add any missing default menu and submenu rows'
+              }
+              className={cn(
+                'rounded-lg border px-3 py-2 text-sm font-medium',
+                defaultNavComplete
+                  ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100',
+              )}
+            >
+              {defaultNavComplete ? 'Default navigation ready' : 'Generate default'}
+            </button>
+          </div>
         }
         columns={[
           { key: 'id', header: 'ID' },

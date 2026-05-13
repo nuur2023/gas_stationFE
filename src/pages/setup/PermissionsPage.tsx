@@ -216,6 +216,21 @@ function isAdminDelegateBlockedSubmenu(sm: Pick<SubMenu, 'route'>): boolean {
   return ADMIN_DELEGATE_BLOCKED_SUBMENU_PATHS.has(p)
 }
 
+/** Submenu routes hidden when the business does not support fuel pooling. */
+const POOL_PERM_SUBMENU_PATHS = new Set([
+  '/fuel-inventory',
+  '/transfers',
+  '/transfer-audit-trail',
+  '/fuel-inventory/transfers',
+])
+
+function filterPoolSubmenusFromMenuTree(source: Menu[]): Menu[] {
+  return source.map((m) => ({
+    ...m,
+    subMenus: (m.subMenus ?? []).filter((sm) => !POOL_PERM_SUBMENU_PATHS.has(submenuPathOnly(sm).toLowerCase())),
+  }))
+}
+
 /** Full tree minus blocked submenus — used when SuperAdmin assigns permissions to an Admin user. */
 function filterAdminGrantExcludedSubmenus(tree: Menu[]): Menu[] {
   const out: Menu[] = []
@@ -302,6 +317,19 @@ export function PermissionsPage() {
   const { data: treeRaw, isFetching: treeLoading } = useGetMenuTreeQuery()
   const tree = treeRaw ?? EMPTY_MENUS
 
+  const selectedBusinessRow = useMemo(
+    () => (isSuperAdmin ? (businesses?.items ?? []).find((b) => b.id === filterBusinessId) : null) ?? null,
+    [isSuperAdmin, businesses?.items, filterBusinessId],
+  )
+  const authSupportsPool = useAppSelector((s) => s.auth.supportsPool)
+
+  const treeForUi = useMemo(() => {
+    if (isSuperAdmin && selectedBusinessRow && selectedBusinessRow.isSupportPool === false)
+      return filterPoolSubmenusFromMenuTree(tree)
+    if (!isSuperAdmin && authSupportsPool === false) return filterPoolSubmenusFromMenuTree(tree)
+    return tree
+  }, [tree, isSuperAdmin, selectedBusinessRow, authSupportsPool])
+
   const { data: permsRaw, isFetching: permsLoading } = useGetPermissionsByUserQuery(
     { userId: targetUserId!, businessId: effectiveBusinessId },
     { skip: targetUserId == null || effectiveBusinessId <= 0 },
@@ -323,24 +351,24 @@ export function PermissionsPage() {
 
   const [flags, setFlags] = useState<Record<string, Flags>>({})
   const actorFlags = useMemo(
-    () => (isSuperAdmin ? mapAll(tree, fullF) : buildFlagsFromServer(tree, actorPerms)),
-    [isSuperAdmin, tree, actorPerms],
+    () => (isSuperAdmin ? mapAll(treeForUi, fullF) : buildFlagsFromServer(treeForUi, actorPerms)),
+    [isSuperAdmin, treeForUi, actorPerms],
   )
 
   useEffect(() => {
-    if (!tree.length || targetUserId == null || effectiveBusinessId <= 0) return
-    setFlags(buildFlagsFromServer(tree, perms))
-  }, [tree, perms, targetUserId, effectiveBusinessId])
+    if (!treeForUi.length || targetUserId == null || effectiveBusinessId <= 0) return
+    setFlags(buildFlagsFromServer(treeForUi, perms))
+  }, [treeForUi, perms, targetUserId, effectiveBusinessId])
 
   const [saveBulk, { isLoading: saving }] = useSavePermissionsBulkMutation()
 
   const grantTree = useMemo(() => {
-    if (isSuperAdmin && targetIsAdmin) return filterAdminGrantExcludedSubmenus(tree)
-    if (isSuperAdmin) return tree
-    const granted = filterGrantedTreeForNonSuperAdmin(tree, actorFlags)
+    if (isSuperAdmin && targetIsAdmin) return filterAdminGrantExcludedSubmenus(treeForUi)
+    if (isSuperAdmin) return treeForUi
+    const granted = filterGrantedTreeForNonSuperAdmin(treeForUi, actorFlags)
     if (isAdmin) return filterAdminDelegateExcludedSubmenus(granted)
     return granted
-  }, [isSuperAdmin, targetIsAdmin, tree, actorFlags, isAdmin])
+  }, [isSuperAdmin, targetIsAdmin, treeForUi, actorFlags, isAdmin])
 
   /** Main setup (/setup) cannot be granted to Admin users — hide the whole card for that target. */
   const displayGrantTree = useMemo(() => {

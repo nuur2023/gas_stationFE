@@ -260,15 +260,14 @@ function DashboardContent() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-slate-600">Inventory amounts (usage × fuel price) and recent records.</p>
+        {/* <p className="text-slate-600">Inventory amounts (usage × fuel price) and recent records.</p> */}
         {needsWorkspaceStation ? (
           <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            {SETTINGS_STATION_HINT} Charts and totals stay empty until a station is set.
+            {SETTINGS_STATION_HINT} welcome to the dashboard
           </p>
         ) : filterStationId != null ? (
           <p className="mt-2 text-sm text-slate-500">
-            Figures below follow the <strong>station selected in the header</strong> (workspace / Settings), not the whole
-            business.
+            welcome to the dashboard
           </p>
         ) : null}
       </div>

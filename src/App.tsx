@@ -58,6 +58,7 @@ import { JournalEntryDetailPage } from './pages/operations/JournalEntryDetailPag
 import { ManualJournalEntryPage } from './pages/operations/ManualJournalEntryPage'
 import { RecurringJournalEntriesPage } from './pages/accounting/RecurringJournalEntriesPage'
 import { AccountingPeriodsPage } from './pages/accounting/AccountingPeriodsPage'
+import { AccountingDashboardPage } from './pages/accounting/AccountingDashboardPage'
 import { CustomerPaymentsPage } from './pages/operations/CustomerPaymentsPage'
 import { BusinessFuelInventoryPage } from './pages/fuel-inventory/BusinessFuelInventoryPage'
 import { TransferFuelsPage } from './pages/fuel-inventory/TransferFuelsPage'
@@ -113,6 +114,7 @@ export function App() {
               <Route path="customer-fuel-givens" element={<CustomerFuelGivensPage />} />
               <Route path="customer-fuel-givens/:id" element={<CustomerFuelGivenDetailsPage />} />
               <Route path="accounting" element={<Navigate to="/accounting/accounts" replace />} />
+              <Route path="accounting/dashboard" element={<AccountingDashboardPage />} />
               <Route path="accounting/accounts" element={<ChartOfAccountsPage />} />
               <Route path="accounting/charts-of-accounts" element={<ChartsOfAccountsPage />} />
               <Route path="accounting/chart-of-accounts-tree" element={<TreeChartsOfAccountsPage />} />

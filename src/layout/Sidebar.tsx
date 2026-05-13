@@ -35,6 +35,7 @@ import {
   UserRoundPlus,
 } from 'lucide-react'
 import { useNavAccess } from '../hooks/useNavAccess'
+import { useAppSelector } from '../app/hooks'
 import { cn } from '../lib/cn'
 import {
   FINANCIAL_REPORT_CORE_PATHS,
@@ -106,6 +107,7 @@ const ADMINISTRATION_CHILDREN: FlyoutItem[] = [
 ]
 
 const ACCOUNTING_CHILDREN: FlyoutItem[] = [
+  { to: '/accounting/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/accounting/accounts', label: 'Accounts', icon: Wallet },
   { to: '/accounting/chart-of-accounts-tree', label: 'COA tree', icon: GitBranch },
   { to: '/accounting/charts-of-accounts', label: 'Charts of accounts', icon: ListTree },
@@ -182,6 +184,7 @@ export function Sidebar({
 }: SidebarProps) {
   const location = useLocation()
   const { linkAllowed, canViewDashboard } = useNavAccess()
+  const supportsPool = useAppSelector((s) => s.auth.supportsPool)
   const isAdminUser = role?.trim().toLowerCase() === 'admin'
 
   const operationsChildren = useMemo(
@@ -189,8 +192,17 @@ export function Sidebar({
     [linkAllowed],
   )
   const managementChildren = useMemo(
-    () => MANAGEMENT_CHILDREN.filter((c) => managementNavItemAllowed(c.to, linkAllowed)),
-    [linkAllowed],
+    () =>
+      MANAGEMENT_CHILDREN.filter((c) => {
+        if (
+          supportsPool === false &&
+          (c.to === '/fuel-inventory' || c.to === '/transfers' || c.to === '/transfer-audit-trail')
+        ) {
+          return false
+        }
+        return managementNavItemAllowed(c.to, linkAllowed)
+      }),
+    [linkAllowed, supportsPool],
   )
   const employeesChildren = useMemo(() => EMPLOYEES_CHILDREN.filter((c) => linkAllowed(c.to)), [linkAllowed])
   const payrollsChildren = useMemo(() => PAYROLLS_CHILDREN.filter((c) => linkAllowed(c.to)), [linkAllowed])

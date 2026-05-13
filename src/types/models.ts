@@ -30,6 +30,8 @@ export interface Business {
   name: string
   address?: string | null
   phoneNumber?: string | null
+  isActive?: boolean
+  isSupportPool?: boolean
 }
 
 export interface Menu {
@@ -69,6 +71,7 @@ export interface PermissionMeItem {
 
 export interface PermissionMeResponse {
   fullAccess: boolean
+  supportsPool: boolean
   items: PermissionMeItem[]
 }
 
@@ -553,6 +556,83 @@ export interface ReportPeriodViewDto {
     netIncreaseInCash?: number
     endingCashBalance?: number
   }
+}
+
+export interface AccountingDashboardKpiDto {
+  totalRevenue: number
+  netProfit: number
+  totalExpenses: number
+  cashBalance: number
+  bankBalance: number
+  inventoryValue: number
+}
+
+export interface AccountingDashboardPlBarDto {
+  label: string
+  revenue: number
+  expenses: number
+  profit: number
+}
+
+export interface AccountingDashboardPlCompareDto {
+  thisMonth: AccountingDashboardPlBarDto
+  previousMonth: AccountingDashboardPlBarDto
+}
+
+export interface AccountingDashboardCashFlowDto {
+  operatingCashFlow: number
+  investingCashFlow: number
+  financingCashFlow: number
+  netCashChange: number
+}
+
+export interface AccountingDashboardCashTrendPointDto {
+  label: string
+  netCashChange: number
+}
+
+export interface AccountingDashboardExpenseBreakdownDto {
+  salaries: number
+  rent: number
+  utilities: number
+  supplies: number
+  other: number
+}
+
+export interface AccountingDashboardRecentLineDto {
+  journalEntryId: number
+  kind: string
+  date: string
+  account: string
+  accountCode?: string | null
+  amount: number
+  description?: string | null
+}
+
+export interface AccountingDashboardRecentTransactionsPagedDto {
+  items: AccountingDashboardRecentLineDto[]
+  totalCount: number
+  page: number
+  pageSize: number
+}
+
+export interface AccountingDashboardAlertDto {
+  code: string
+  message: string
+  severity: string
+}
+
+export interface AccountingDashboardOverviewDto {
+  asOfDate: string
+  businessId: number
+  stationId: number | null
+  kpis: AccountingDashboardKpiDto
+  profitLossCompare: AccountingDashboardPlCompareDto
+  cashFlowThisMonth: AccountingDashboardCashFlowDto
+  cashTrend: AccountingDashboardCashTrendPointDto[]
+  expenseBreakdownThisMonth: AccountingDashboardExpenseBreakdownDto
+  recentTransactions: AccountingDashboardRecentLineDto[]
+  alerts: AccountingDashboardAlertDto[]
 }
 
 export interface JournalEntryLineWriteRequest {
@@ -1130,6 +1210,8 @@ export interface AuthResponse {
   expiresAtUtc: string
   businessId?: number | null
   stationId?: number | null
+  isSupportPool?: boolean
+  businessInactive?: boolean
 }
 
 /** Business-level fuel pool (separate from nozzle / dipping inventory). */

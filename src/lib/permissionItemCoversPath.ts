@@ -49,6 +49,8 @@ export function permissionItemCoversPath(pathname: string, search: string, itemR
   /** Tree COA is read-only; action flags follow the Accounts submenu. */
   if (pathname === '/accounting/chart-of-accounts-tree' && r === '/accounting/accounts') return true
 
+  if (pathname === '/accounting/dashboard' && r === '/accounting/accounts') return true
+
   if (pathname === '/supplier-payments' && r === '/purchases') return true
 
   if (pathname === '/transfer-audit-trail') {

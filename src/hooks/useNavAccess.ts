@@ -207,6 +207,7 @@ export function useNavAccess() {
       if (inventoryTransferAliasAllowed(pathname, search, set)) return true
       if (legacyFinancialQueryAllowed(pathname, search, set)) return true
       if (pathname === '/accounting/chart-of-accounts-tree' && set.has('/accounting/accounts')) return true
+      if (pathname === '/accounting/dashboard' && set.has('/accounting/accounts')) return true
       if (pathname === '/supplier-payments' && set.has('/purchases')) return true
       return false
     },
@@ -234,6 +235,7 @@ export function useNavAccess() {
       if (inventoryTransferAliasAllowed(pathname, search, set)) return true
       if (pathname === '/reports/financial' && legacyFinancialQueryAllowed(pathname, search, set)) return true
       if (pathname === '/accounting/chart-of-accounts-tree' && set.has('/accounting/accounts')) return true
+      if (pathname === '/accounting/dashboard' && set.has('/accounting/accounts')) return true
       if (pathname === '/supplier-payments' && set.has('/purchases')) return true
       return false
     },

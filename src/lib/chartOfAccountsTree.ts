@@ -1,12 +1,5 @@
 import type { Account, ChartsOfAccounts } from '../types/models'
 
-/** Admin/Accountant "temporary" top-level: scoped to a business but not linked under a parent in the chart. */
-export function isTemporaryBusinessAccount(account: Account): boolean {
-  const bid = account.businessId
-  const pid = account.parentAccountId
-  return bid != null && bid > 0 && (pid == null || pid === 0)
-}
-
 export type TreeAccountNode = {
   account: Account
   children: TreeAccountNode[]
@@ -27,6 +20,7 @@ export function sortChartsForTree(charts: ChartsOfAccounts[]): ChartsOfAccounts[
     if (u === 'income') return 3
     if (u === 'cogs' || u === 'cost of goods sold') return 4
     if (u === 'expense') return 5
+    if (u === 'temporary' || u === 'temporary account') return 6
     return 100
   }
   return [...charts].sort((a, b) => {

@@ -1,6 +1,6 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query'
-import { logout } from '../authSlice'
+import { logout, setSupportsPool } from '../authSlice'
 import type {
   AuthResponse,
   Account,
@@ -45,6 +45,8 @@ import type {
   BalanceSheetReportDto,
   CapitalStatementReportDto,
   ReportPeriodViewDto,
+  AccountingDashboardOverviewDto,
+  AccountingDashboardRecentTransactionsPagedDto,
   CashOutDailyReportDto,
   DailySummaryReportDto,
   DailyFuelGivenRowDto,
@@ -578,6 +580,15 @@ const baseQueryWithAutoLogout: BaseQueryFn<string | FetchArgs, unknown, FetchBas
       window.location.replace('/login')
     }
   }
+  if (result.error?.status === 403) {
+    const data = result.error.data as { code?: string } | undefined
+    if (data?.code === 'business_inactive') {
+      api.dispatch(logout())
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.replace('/login')
+      }
+    }
+  }
   return result
 }
 
@@ -683,11 +694,11 @@ export const apiSlice = createApi({
     }),
     createBusiness: builder.mutation<Business, Partial<Business>>({
       query: (body) => ({ url: 'Businesses', method: 'POST', body }),
-      invalidatesTags: ['Business'],
+      invalidatesTags: ['Business', 'Permission'],
     }),
     updateBusiness: builder.mutation<Business, { id: number; body: Partial<Business> }>({
       query: ({ id, body }) => ({ url: `Businesses/${id}`, method: 'PUT', body }),
-      invalidatesTags: ['Business'],
+      invalidatesTags: ['Business', 'Permission'],
     }),
     deleteBusiness: builder.mutation<void, number>({
       query: (id) => ({ url: `Businesses/${id}`, method: 'DELETE' }),
@@ -782,6 +793,16 @@ export const apiSlice = createApi({
     getMyPermissions: builder.query<PermissionMeResponse, void>({
       query: () => ({ url: 'Permissions/me' }),
       providesTags: ['Permission'],
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled
+          if (!data.fullAccess) {
+            dispatch(setSupportsPool(data.supportsPool !== false))
+          }
+        } catch {
+          /* ignore */
+        }
+      },
     }),
 
     savePermissionsBulk: builder.mutation<
@@ -1219,6 +1240,22 @@ export const apiSlice = createApi({
       { businessId: number; from?: string; to?: string; stationId?: number; trialBalanceMode?: string }
     >({
       query: (params) => ({ url: 'FinancialReports/report-period-view', params }),
+      providesTags: ['FinancialReport'],
+    }),
+
+    getAccountingDashboardOverview: builder.query<
+      AccountingDashboardOverviewDto,
+      { businessId: number; stationId?: number }
+    >({
+      query: (params) => ({ url: 'AccountingDashboard/overview', params }),
+      providesTags: ['FinancialReport'],
+    }),
+
+    getAccountingDashboardRecentTransactions: builder.query<
+      AccountingDashboardRecentTransactionsPagedDto,
+      { businessId: number; stationId?: number; from: string; to: string; page?: number; pageSize?: number }
+    >({
+      query: (params) => ({ url: 'AccountingDashboard/recent-transactions', params }),
       providesTags: ['FinancialReport'],
     }),
 
@@ -2154,6 +2191,8 @@ export const {
   useGetBalanceSheetReportQuery,
   useGetCapitalStatementReportQuery,
   useGetReportPeriodViewQuery,
+  useGetAccountingDashboardOverviewQuery,
+  useGetAccountingDashboardRecentTransactionsQuery,
   useGetRecurringJournalEntriesQuery,
   useCreateRecurringJournalEntryMutation,
   useUpdateRecurringJournalEntryMutation,

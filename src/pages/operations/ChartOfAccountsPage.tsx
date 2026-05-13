@@ -48,7 +48,6 @@ export function ChartOfAccountsPage() {
 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Account | null>(null)
-  const [temporaryBusinessAccount, setTemporaryBusinessAccount] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [form, setForm] = useState<AccountWriteRequest>({
     name: '',
@@ -143,26 +142,16 @@ export function ChartOfAccountsPage() {
   const isGlobalAccountForm =
     Boolean(editing && editing.businessId == null) ||
     Boolean(!editing && showBizPicker && !form.businessId)
-  const canTemporaryTopLevelAccount = role === 'Admin' || role === 'Accountant'
-  const isTemporaryCreateFlow =
-    !editing &&
-    canTemporaryTopLevelAccount &&
-    temporaryBusinessAccount &&
-    !isGlobalAccountForm
   const showTypeField =
-    isGlobalAccountForm ||
-    (role === 'SuperAdmin' && !isGlobalAccountForm && !form.parentAccountId) ||
-    isTemporaryCreateFlow
-  const showParentField = !isGlobalAccountForm && !isTemporaryCreateFlow
+    isGlobalAccountForm || (role === 'SuperAdmin' && !isGlobalAccountForm && !form.parentAccountId)
+  const showParentField = !isGlobalAccountForm
 
   function closeModal() {
-    setTemporaryBusinessAccount(false)
     setOpen(false)
   }
 
   function openCreate() {
     setEditing(null)
-    setTemporaryBusinessAccount(false)
     setForm({
       name: '',
       code: '',
@@ -175,7 +164,6 @@ export function ChartOfAccountsPage() {
 
   function openEdit(row: Account) {
     setEditing(row)
-    setTemporaryBusinessAccount(false)
     setForm({
       name: row.name,
       code: row.code,
@@ -229,30 +217,18 @@ export function ChartOfAccountsPage() {
       } else {
         const bid = effectiveBusinessIdForScope
         if (!bid) return
-        if (canTemporaryTopLevelAccount && temporaryBusinessAccount) {
-          if (form.chartsOfAccountsId <= 0) return
-          await createAccount({
-            name,
-            code,
-            chartsOfAccountsId: form.chartsOfAccountsId,
-            parentAccountId: null,
-            businessId: bid,
-          }).unwrap()
-        } else {
-          const parent = form.parentAccountId ? parentCandidatesForForm.find((x) => x.id === form.parentAccountId) : null
-          if (form.parentAccountId && !parent) return
-          if (!form.parentAccountId && role !== 'SuperAdmin') return
-          if (!form.parentAccountId && form.chartsOfAccountsId <= 0) return
-          await createAccount({
-            name,
-            code,
-            chartsOfAccountsId: parent?.chartsOfAccountsId ?? form.chartsOfAccountsId,
-            parentAccountId: form.parentAccountId ?? null,
-            businessId: bid,
-          }).unwrap()
-        }
+        const parent = form.parentAccountId ? parentCandidatesForForm.find((x) => x.id === form.parentAccountId) : null
+        if (form.parentAccountId && !parent) return
+        if (!form.parentAccountId && role !== 'SuperAdmin') return
+        if (!form.parentAccountId && form.chartsOfAccountsId <= 0) return
+        await createAccount({
+          name,
+          code,
+          chartsOfAccountsId: parent?.chartsOfAccountsId ?? form.chartsOfAccountsId,
+          parentAccountId: form.parentAccountId ?? null,
+          businessId: bid,
+        }).unwrap()
       }
-      setTemporaryBusinessAccount(false)
       setOpen(false)
     } catch (e) {
       console.error(e)
@@ -276,11 +252,9 @@ export function ChartOfAccountsPage() {
           : Boolean(form.parentAccountId)
       : showBizPicker && !form.businessId
         ? form.chartsOfAccountsId > 0 && !form.parentAccountId
-        : isTemporaryCreateFlow
-          ? Boolean(effectiveCreateBusinessId && effectiveCreateBusinessId > 0 && form.chartsOfAccountsId > 0)
-          : role === 'SuperAdmin'
-            ? Boolean(effectiveCreateBusinessId && effectiveCreateBusinessId > 0 && (form.parentAccountId || form.chartsOfAccountsId > 0))
-            : Boolean(effectiveCreateBusinessId && effectiveCreateBusinessId > 0 && form.parentAccountId))
+        : role === 'SuperAdmin'
+          ? Boolean(effectiveCreateBusinessId && effectiveCreateBusinessId > 0 && (form.parentAccountId || form.chartsOfAccountsId > 0))
+          : Boolean(effectiveCreateBusinessId && effectiveCreateBusinessId > 0 && form.parentAccountId))
 
   return (
     <>
@@ -383,34 +357,8 @@ export function ChartOfAccountsPage() {
               />
             </div>
           )}
-          {!editing && canTemporaryTopLevelAccount && !(showBizPicker && !form.businessId) && (
-            <div className="md:col-span-2 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <input
-                id="temporary-business-account"
-                type="checkbox"
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                checked={temporaryBusinessAccount}
-                onChange={(e) => {
-                  const checked = e.target.checked
-                  setTemporaryBusinessAccount(checked)
-                  setForm((s) => ({
-                    ...s,
-                    parentAccountId: null,
-                    chartsOfAccountsId: checked ? 0 : 0,
-                  }))
-                }}
-              />
-              <label htmlFor="temporary-business-account" className="cursor-pointer text-sm text-slate-800">
-                <span className="font-medium">Check for temporary account</span>
-                {/* <span className="mt-0.5 block text-xs font-normal text-slate-600">
-                  Not linked to a parent. Choose the account type; the account is saved under your business from login (JWT)
-                  with a null parent.
-                </span> */}
-              </label>
-            </div>
-          )}
           {showTypeField && (
-            <div className={isTemporaryCreateFlow ? 'md:col-span-2' : ''}>
+            <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Type</label>
               <FormSelect
                 options={typeOptions}

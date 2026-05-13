@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react'
+import type { FetchBaseQueryError } from '@reduxjs/toolkit/query'
 import { useAppDispatch, useAppSelector } from '../app/hooks'
 import { setCredentials } from '../app/authSlice'
 import { useLoginMutation } from '../app/api/apiSlice'
@@ -36,10 +37,19 @@ export function LoginPage() {
           businessId: res.businessId ?? null,
           stationId: res.stationId ?? null,
           selectedStationId: res.stationId ?? null,
+          supportsPool: res.isSupportPool !== false,
         }),
       )
       navigate('/')
-    } catch {
+    } catch (err: unknown) {
+      const fe = err as FetchBaseQueryError | undefined
+      if (fe?.status === 403) {
+        const d = fe.data as { code?: string; message?: string } | undefined
+        if (d?.code === 'business_inactive') {
+          setError(d.message ?? 'This business is inactive. You cannot sign in.')
+          return
+        }
+      }
       setError('Invalid email, phone, or password.')
     }
   }
