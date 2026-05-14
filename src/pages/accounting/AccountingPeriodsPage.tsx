@@ -27,7 +27,6 @@ type PeriodRow = {
   status: number
   closedAt?: string | null
   closedByUserId?: number | null
-  closeJournalEntryId?: number | null
 }
 
 function statusLabel(s: number): string {
@@ -86,7 +85,6 @@ export function AccountingPeriodsPage() {
   const [editPeriodEnd, setEditPeriodEnd] = useState('')
 
   const [autoCloseRow, setAutoCloseRow] = useState<PeriodRow | null>(null)
-  const [autoCloseJournalId, setAutoCloseJournalId] = useState('')
   const [autoCloseError, setAutoCloseError] = useState<string | null>(null)
 
   const [reopenConfirmRow, setReopenConfirmRow] = useState<PeriodRow | null>(null)
@@ -217,7 +215,7 @@ export function AccountingPeriodsPage() {
             Manual journal entry
           </Link>{' '}
           first, then click <strong>Auto-close</strong> on the open period. A confirmation dialog explains that only the
-          period status is updated (no journal is posted). Optional: link the closing journal id for your records.
+          period status is updated (no journal is posted).
         </p>
       </div>
 
@@ -270,7 +268,6 @@ export function AccountingPeriodsPage() {
                 title="Confirm after posting your manual close journal — updates period status only"
                 onClick={() => {
                   setAutoCloseError(null)
-                  setAutoCloseJournalId('')
                   setAutoCloseRow(row)
                 }}
               >
@@ -303,7 +300,6 @@ export function AccountingPeriodsPage() {
         open={autoCloseRow != null}
         onClose={() => {
           setAutoCloseRow(null)
-          setAutoCloseJournalId('')
           setAutoCloseError(null)
         }}
         title="Auto-close this period?"
@@ -326,18 +322,6 @@ export function AccountingPeriodsPage() {
               <li>After you confirm, the period shows Closed and new routine journals in that date range may be blocked.</li>
               <li>You can use <strong>Reopen</strong> later if needed (journals stay as posted).</li>
             </ul>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600">Closing journal id (optional)</label>
-              <input
-                type="number"
-                min={1}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                placeholder="e.g. 42"
-                value={autoCloseJournalId}
-                onChange={(e) => setAutoCloseJournalId(e.target.value)}
-              />
-              <p className="mt-1 text-xs text-slate-500">Stored on the period for reference; must belong to this business.</p>
-            </div>
             {autoCloseError ? (
               <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-900">{autoCloseError}</p>
             ) : null}
@@ -347,7 +331,6 @@ export function AccountingPeriodsPage() {
                 className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 onClick={() => {
                   setAutoCloseRow(null)
-                  setAutoCloseJournalId('')
                   setAutoCloseError(null)
                 }}
               >
@@ -361,19 +344,11 @@ export function AccountingPeriodsPage() {
                   void (async () => {
                     if (!autoCloseRow) return
                     setAutoCloseError(null)
-                    const trimmed = autoCloseJournalId.trim()
-                    const jid = trimmed === '' ? undefined : Number.parseInt(trimmed, 10)
-                    if (jid !== undefined && (!Number.isFinite(jid) || jid <= 0)) {
-                      setAutoCloseError('Journal id must be a positive number or left blank.')
-                      return
-                    }
                     try {
                       await markPeriodClosed({
                         id: autoCloseRow.id,
-                        body: jid !== undefined ? { closeJournalEntryId: jid } : {},
                       }).unwrap()
                       setAutoCloseRow(null)
-                      setAutoCloseJournalId('')
                       void refetch()
                     } catch (e) {
                       setAutoCloseError(mutationErrorMessage(e))

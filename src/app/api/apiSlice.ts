@@ -1326,14 +1326,10 @@ export const apiSlice = createApi({
       query: (id) => ({ url: `accounting-periods/${id}`, method: 'DELETE' }),
       invalidatesTags: ['AccountingPeriod'],
     }),
-    markAccountingPeriodClosed: builder.mutation<
-      { message: string; closeJournalEntryId?: number | null },
-      { id: number; body?: { closeJournalEntryId?: number } }
-    >({
-      query: ({ id, body }) => ({
+    markAccountingPeriodClosed: builder.mutation<{ message: string }, { id: number }>({
+      query: ({ id }) => ({
         url: `accounting-periods/${id}/mark-closed`,
         method: 'POST',
-        body: body ?? {},
       }),
       invalidatesTags: ['AccountingPeriod', 'JournalEntry', 'FinancialReport'],
     }),

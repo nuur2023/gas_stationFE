@@ -137,6 +137,7 @@ export function ManualJournalEntryPage() {
   const [descEditEntry, setDescEditEntry] = useState<JournalEntry | null>(null)
   const [descEditText, setDescEditText] = useState('')
   const [descEditDate, setDescEditDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [descEditEntryKind, setDescEditEntryKind] = useState(0)
 
   const entryKindOptions: SelectOption[] = useMemo(
     () => [
@@ -330,6 +331,7 @@ export function ManualJournalEntryPage() {
     setDescEditEntry(row)
     setDescEditText(row.description ?? '')
     setDescEditDate((row.date ?? '').slice(0, 10) || new Date().toISOString().slice(0, 10))
+    setDescEditEntryKind(row.entryKind ?? 0)
     setDescEditOpen(true)
   }
 
@@ -341,6 +343,7 @@ export function ManualJournalEntryPage() {
         body: {
           description: descEditText,
           date: `${descEditDate}T12:00:00.000Z`,
+          entryKind: descEditEntryKind,
         },
       }).unwrap()
       showSuccess('Journal header updated.')
@@ -480,6 +483,15 @@ export function ManualJournalEntryPage() {
         <div className="mb-3">
           <label className="mb-1 block text-sm font-medium text-slate-700">Date</label>
           <DateField value={descEditDate} onChange={setDescEditDate} />
+        </div>
+        <div className="mb-3">
+          <label className="mb-1 block text-sm font-medium text-slate-700">Entry type</label>
+          <FormSelect
+            options={entryKindOptions}
+            value={entryKindOptions.find((o) => o.value === String(descEditEntryKind)) ?? entryKindOptions[0] ?? null}
+            onChange={(opt) => setDescEditEntryKind(opt ? Number(opt.value) : 0)}
+            placeholder="Entry type"
+          />
         </div>
         <label className="mb-1 block text-sm font-medium text-slate-700">Description</label>
         <textarea

@@ -445,6 +445,8 @@ export interface JournalEntry {
   businessId: number
   userId: number
   stationId?: number | null
+  /** 0 Normal, 1 Adjusting, 2 Closing, 3 RecurringAuto */
+  entryKind?: number
   lines: JournalEntryLine[]
 }
 
@@ -658,6 +660,8 @@ export interface JournalEntryWriteRequest {
 export interface JournalEntryDescriptionPatchRequest {
   description: string
   date?: string
+  /** 0 Normal, 1 Adjusting, 2 Closing */
+  entryKind?: number
 }
 
 export interface CustomerPayment {
