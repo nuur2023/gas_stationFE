@@ -33,6 +33,7 @@ import {
   useEffectiveStationId,
 } from '../../lib/stationContext'
 import type { JournalEntry, JournalEntryWriteRequest } from '../../types/models'
+import { journalEntryKindForForm, journalEntryKindTableLabel } from '../../lib/journalEntryKind'
 
 /** RTK Query / fetchBaseQuery errors: plain string body, ProblemDetails, or message. */
 function parseApiMutationError(e: unknown, fallback: string): string {
@@ -210,7 +211,11 @@ export function ManualJournalEntryPage() {
       })
     }
     c.push(
-      { key: 'lines', header: 'Lines', render: (r) => String(r.lines?.length ?? 0) },
+      {
+        key: 'entryKind',
+        header: 'Entry type',
+        render: (r) => journalEntryKindTableLabel(r.entryKind),
+      },
       {
         key: 'amount',
         header: 'Amount',
@@ -331,7 +336,7 @@ export function ManualJournalEntryPage() {
     setDescEditEntry(row)
     setDescEditText(row.description ?? '')
     setDescEditDate((row.date ?? '').slice(0, 10) || new Date().toISOString().slice(0, 10))
-    setDescEditEntryKind(row.entryKind ?? 0)
+    setDescEditEntryKind(journalEntryKindForForm(row.entryKind))
     setDescEditOpen(true)
   }
 
@@ -343,7 +348,7 @@ export function ManualJournalEntryPage() {
         body: {
           description: descEditText,
           date: `${descEditDate}T12:00:00.000Z`,
-          entryKind: descEditEntryKind,
+          entryKind: journalEntryKindForForm(descEditEntryKind),
         },
       }).unwrap()
       showSuccess('Journal header updated.')
@@ -487,9 +492,14 @@ export function ManualJournalEntryPage() {
         <div className="mb-3">
           <label className="mb-1 block text-sm font-medium text-slate-700">Entry type</label>
           <FormSelect
+            key={`journal-header-entry-kind-${descEditEntry?.id ?? 'new'}`}
             options={entryKindOptions}
-            value={entryKindOptions.find((o) => o.value === String(descEditEntryKind)) ?? entryKindOptions[0] ?? null}
-            onChange={(opt) => setDescEditEntryKind(opt ? Number(opt.value) : 0)}
+            value={
+              entryKindOptions.find((o) => o.value === String(journalEntryKindForForm(descEditEntryKind))) ??
+              entryKindOptions[0] ??
+              null
+            }
+            onChange={(opt) => setDescEditEntryKind(journalEntryKindForForm(opt?.value))}
             placeholder="Entry type"
           />
         </div>

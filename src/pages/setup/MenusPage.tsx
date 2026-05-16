@@ -130,7 +130,6 @@ const DEFAULT_NAV: NavBlock[] = [
     submenus: [
       { name: 'Liter received', route: '/reports/liter-received' },
       { name: 'Daily cash sales report', route: '/reports/daily-cash-sales' },
-      { name: 'Cash out daily', route: '/reports/cash-out-daily' },
       { name: 'Expense reports', route: '/reports/expenses' },
       { name: 'Exchange reports', route: '/reports/exchange' },
       { name: 'Cash or USD Taken reports', route: '/reports/cash-usd-taken' },

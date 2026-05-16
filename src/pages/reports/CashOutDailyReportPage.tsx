@@ -11,12 +11,12 @@ import {
 import { useAppSelector } from '../../app/hooks'
 import { FormSelect, type SelectOption } from '../../components/FormSelect'
 import { FileText } from 'lucide-react'
+import { LedgerReportCard, type LedgerCardKind } from '../../components/reports/LedgerReportCard'
 import { formatCurrency, formatWithCurrencySymbol } from '../../lib/formatNumber'
 import {
   adminNeedsSettingsStation,
   SETTINGS_STATION_HINT,
   showBusinessPickerInForms,
-  showStationColumnInTables,
   showStationPickerInForms,
   useEffectiveStationId,
 } from '../../lib/stationContext'
@@ -38,16 +38,21 @@ export function CashOutDailyReportPage({
   expenseType,
   title = 'Cash out daily report',
   tableTitle = 'Cash out',
+  pdfReportTitle,
+  operationOfficeOnly = false,
 }: {
   expenseType?: 'Expense' | 'Exchange' | 'cashOrUsdTaken'
   title?: string
   tableTitle?: string
+  /** Uppercase title in PDF banner (e.g. EXPENSE REPORT). */
+  pdfReportTitle?: string
+  /** Cash / USD taken: Operation office only — no Management filter. */
+  operationOfficeOnly?: boolean
 } = {}) {
   const role = useAppSelector((s) => s.auth.role)
   const authBusinessId = useAppSelector((s) => s.auth.businessId)
   const showBizPicker = showBusinessPickerInForms(role)
   const showStationPicker = showStationPickerInForms(role)
-  const showStationCol = showStationColumnInTables(role)
   const effectiveStationId = useEffectiveStationId()
 
   const [from, setFrom] = useState(todayISO)
@@ -55,16 +60,20 @@ export function CashOutDailyReportPage({
   const [reportBusinessId, setReportBusinessId] = useState<number | null>(authBusinessId ?? null)
   const [superStationId, setSuperStationId] = useState<number | null>(null)
   type SideFilter = 'all' | 'Operation' | 'Management'
-  const [sideFilter, setSideFilter] = useState<SideFilter>('all')
+  const [sideFilter, setSideFilter] = useState<SideFilter>(operationOfficeOnly ? 'Operation' : 'all')
   const sideOptions: SelectOption[] = useMemo(
-    () => [
-      { value: 'all', label: 'All offices' },
-      { value: 'Operation', label: 'Operation office' },
-      { value: 'Management', label: 'Management office' },
-    ],
-    [],
+    () =>
+      operationOfficeOnly
+        ? [{ value: 'Operation', label: 'Operation office' }]
+        : [
+            { value: 'all', label: 'All offices' },
+            { value: 'Operation', label: 'Operation office' },
+            { value: 'Management', label: 'Management office' },
+          ],
+    [operationOfficeOnly],
   )
-  const isManagementFilter = sideFilter === 'Management'
+  const isManagementFilter = !operationOfficeOnly && sideFilter === 'Management'
+  const cardKind: LedgerCardKind = expenseType ?? 'Expense'
 
   const { data: businessesData } = useGetBusinessesQuery({ page: 1, pageSize: 500, q: undefined })
   const { data: currencies = [] } = useGetCurrenciesQuery()
@@ -203,72 +212,59 @@ export function CashOutDailyReportPage({
     [lines],
   )
 
-  // Management entries have no station context, so drop the Station column when that filter
-  // is active to avoid a permanent dash placeholder (applies to both PDF and HTML render).
-  const showStationColInTable = showStationCol && !isManagementFilter
-  const renderedColCount = showStationColInTable ? 6 : 5
+  const stationLabelForPdf = useMemo(() => {
+    if (isManagementFilter) return ''
+    if (apiStationId != null && apiStationId > 0) {
+      return stationNameById.get(apiStationId) ?? `Station #${apiStationId}`
+    }
+    return 'All stations'
+  }, [isManagementFilter, apiStationId, stationNameById])
+
+  const officeLabelForPdf = useMemo(() => {
+    if (operationOfficeOnly) return 'Operation office'
+    if (sideFilter === 'Operation') return 'Operation office'
+    if (sideFilter === 'Management') return 'Management office'
+    return 'All offices'
+  }, [operationOfficeOnly, sideFilter])
 
   function handleOpenPdf() {
     if (dateRangeInvalid || lines.length === 0) return
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
     const pageW = doc.internal.pageSize.getWidth()
-    const margin = 48
-    const headerH = 150
-    const today = new Date().toLocaleDateString('en-CA')
-    let startY = headerH + 54
+    const margin = 24
+    const bannerH = 110
+    const reportBannerTitle = (pdfReportTitle ?? 'CASH OUT DAILY REPORT').toUpperCase()
 
     doc.setFillColor(21, 128, 122)
-    doc.rect(0, 0, pageW, headerH, 'F')
+    doc.rect(0, 0, pageW, bannerH, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(28)
-    doc.text((businessName || 'Gas Station').toUpperCase(), pageW / 2, 52, { align: 'center' })
+    doc.setFontSize(26)
+    doc.text((businessName || 'GAS STATION').toUpperCase(), pageW / 2, 36, { align: 'center' })
     doc.setFontSize(14)
-    doc.text('CASH OUT DAILY REPORT', pageW / 2, 80, { align: 'center' })
+    doc.text(reportBannerTitle, pageW / 2, 62, { align: 'center' })
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(13)
-    const sideSubtitle =
-      sideFilter === 'Operation'
-        ? 'Operation office'
-        : sideFilter === 'Management'
-          ? 'Management office'
-          : 'All offices'
-    doc.text(`Daily — ${sideSubtitle}`, pageW / 2, 106, { align: 'center' })
-    doc.setFontSize(12)
-    doc.text(`${from || '…'} ! ${to || '…'}`, pageW / 2, 130, { align: 'center' })
+    doc.setFontSize(11)
+    doc.text(`${officeLabelForPdf}  |  ${from || '…'} to ${to || '…'}`, pageW / 2, 86, { align: 'center' })
+    if (stationLabelForPdf) {
+      doc.setFontSize(10)
+      doc.text(stationLabelForPdf, pageW / 2, 100, { align: 'center' })
+    }
 
-    doc.setTextColor(31, 41, 55)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(12)
-   
-    doc.setFont('helvetica', 'normal')
-    const stationLine = isManagementFilter
-      ? '—'
-      : apiStationId != null && apiStationId > 0
-        ? (stationNameById.get(apiStationId) ?? `#${apiStationId}`)
-        : 'All stations'
-    doc.text(stationLine, margin, startY)
-    doc.text(today, pageW - margin, startY, { align: 'right' })
-    startY += 14
-
-    const head = [['Date', 'Description', 'Amount', 'Rate', 'Amount (USD)', ...(showStationColInTable ? ['Station'] : [])]]
+    const head = [['Date', 'Description', 'Amount', 'Rate', 'Amount (USD)']]
     const body = lines.map((row) => {
       const code = (row.currencyCode || 'USD').trim().toUpperCase()
       const isUsd = code === 'USD'
       const stationLocalSymbol = row.stationId != null ? symbolByStationId.get(row.stationId) : undefined
-      const stationLabel = row.stationId != null ? (stationNameById.get(row.stationId) ?? `#${row.stationId}`) : '—'
       return [
         row.date,
         row.description || '—',
-        // USD entries have no local-currency component — render 0 in the station's local symbol
-        // so the Amount column stays purely "local-currency".
         isUsd
           ? formatWithCurrencySymbol(0, stationLocalSymbol)
           : formatWithCurrencySymbol(row.localAmount, resolveRowSymbol(row)),
         !isUsd && row.rate > 1e-9 ? formatWithCurrencySymbol(row.rate, resolveRowSymbol(row)) : '—',
         Math.abs(row.amountUsd) > 1e-9 ? formatCurrency(row.amountUsd, 'USD') : '—',
-        ...(showStationColInTable ? [stationLabel] : []),
       ]
     })
 
@@ -282,7 +278,7 @@ export function CashOutDailyReportPage({
           .join('\n')
 
     autoTable(doc, {
-      startY: startY + 8,
+      startY: stationLabelForPdf ? 118 : 108,
       head,
       body,
       foot: [[
@@ -291,13 +287,12 @@ export function CashOutDailyReportPage({
         totalAmountCell,
         '',
         formatCurrency(data?.totalCashOutUsd ?? grandTotalUsd, 'USD'),
-        ...(showStationColInTable ? [''] : []),
       ]],
       showFoot: 'lastPage',
-      styles: { fontSize: 10, cellPadding: 5, textColor: [31, 41, 55] },
-      headStyles: { fillColor: [241, 245, 249], textColor: [31, 41, 55], fontStyle: 'bold' },
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 3, textColor: [31, 41, 55] },
+      headStyles: { fillColor: [225, 225, 225], textColor: [15, 23, 42], fontStyle: 'bold' },
       footStyles: { fillColor: [236, 253, 245], textColor: [6, 78, 59], fontStyle: 'bold' },
-      theme: 'striped',
       margin: { left: margin, right: margin, bottom: 60 },
       didDrawPage: (tableData) => {
         const pW = doc.internal.pageSize.getWidth()
@@ -365,15 +360,24 @@ export function CashOutDailyReportPage({
             onChange={(e) => setTo(e.target.value)}
           />
         </div>
-        <div className="min-w-[200px] flex-1">
-          <label className="mb-1 block text-sm font-medium text-slate-600">Office</label>
-          <FormSelect
-            options={sideOptions}
-            value={sideOptions.find((o) => o.value === sideFilter) ?? sideOptions[0]}
-            onChange={(o) => setSideFilter(((o?.value as SideFilter) ?? 'all'))}
-            placeholder="All offices"
-          />
-        </div>
+        {operationOfficeOnly ? (
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-600">Office</label>
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-base text-slate-800">
+              Operation office
+            </p>
+          </div>
+        ) : (
+          <div className="min-w-[200px] flex-1">
+            <label className="mb-1 block text-sm font-medium text-slate-600">Office</label>
+            <FormSelect
+              options={sideOptions}
+              value={sideOptions.find((o) => o.value === sideFilter) ?? sideOptions[0]}
+              onChange={(o) => setSideFilter(((o?.value as SideFilter) ?? 'all'))}
+              placeholder="All offices"
+            />
+          </div>
+        )}
         {showStationPicker && !isManagementFilter && (
           <div className="min-w-[180px] flex-1">
             <label className="mb-1 block text-sm font-medium text-slate-600">Station</label>
@@ -400,93 +404,54 @@ export function CashOutDailyReportPage({
       )}
       {isError && <p className="text-base text-red-600">Could not load report.</p>}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-base font-semibold text-slate-800">{tableTitle}</div>
-        <table className="min-w-full divide-y divide-slate-200 text-base">
-          <thead className="bg-slate-50">
-            <tr>
-              <th className="px-4 py-3 text-left font-semibold text-slate-700">Date</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-700">Description</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-700">Amount</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-700">Rate</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-700">Amount (USD)</th>
-              {showStationColInTable ? (
-                <th className="px-4 py-3 text-left font-semibold text-slate-700">Station</th>
-              ) : null}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {lines.length === 0 && (
-              <tr>
-                <td colSpan={renderedColCount} className="px-4 py-8 text-center text-slate-500">
-                  {isFetching ? 'Loading…' : skipForMissingStation ? '—' : 'No rows in this range.'}
-                </td>
-              </tr>
-            )}
-            {lines.map((row) => {
-              const code = (row.currencyCode || 'USD').trim().toUpperCase()
-              const isUsd = code === 'USD'
-              const rowSymbol = resolveRowSymbol(row)
-              const stationLocalSymbol = row.stationId != null ? symbolByStationId.get(row.stationId) : undefined
-              return (
-                <tr key={row.id} className="hover:bg-slate-50/70">
-                  <td className="px-4 py-3 whitespace-nowrap text-slate-800">{row.date}</td>
-                  <td className="px-4 py-3 text-slate-800">{row.description || '—'}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-slate-900">
-                    {isUsd
-                      ? formatWithCurrencySymbol(0, stationLocalSymbol)
-                      : formatWithCurrencySymbol(row.localAmount, rowSymbol)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                    {!isUsd && row.rate > 1e-9
-                      ? formatWithCurrencySymbol(row.rate, rowSymbol)
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                    {Math.abs(row.amountUsd) > 1e-9 ? formatCurrency(row.amountUsd, 'USD') : '—'}
-                  </td>
-                  {showStationColInTable ? (
-                    <td className="px-4 py-3 text-slate-600">
-                      {row.stationId != null
-                        ? (stationNameById.get(row.stationId) ?? `#${row.stationId}`)
-                        : '—'}
-                    </td>
-                  ) : null}
-                </tr>
-              )
-            })}
-          </tbody>
-          {lines.length > 0 && (
-            <tfoot className="border-t-2 border-slate-300 bg-slate-50">
-              <tr>
-                <td colSpan={2} className="px-4 py-3 font-semibold text-slate-900">
-                  Total cash out
-                </td>
-                <td className="px-4 py-3 text-right font-bold tabular-nums text-slate-900">
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold text-slate-800">{tableTitle}</h2>
+        {lines.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center text-slate-500">
+            {isFetching ? 'Loading…' : skipForMissingStation ? '—' : 'No rows in this range.'}
+          </p>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {lines.map((row) => (
+                <LedgerReportCard
+                  key={row.id}
+                  row={row}
+                  kind={cardKind}
+                  resolveSymbol={resolveRowSymbol}
+                />
+              ))}
+            </div>
+            <article className="rounded-2xl border-2 border-slate-200 bg-slate-50 p-5 shadow-sm">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-600">Total cash out</p>
+              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                <div className="flex flex-col items-start gap-1">
                   {localTotalsByCurrency.size === 0 ? (
-                    formatWithCurrencySymbol(
-                      0,
-                      lines[0] && lines[0].stationId != null ? symbolByStationId.get(lines[0].stationId) : undefined,
-                    )
+                    <span className="text-xl font-bold text-slate-900 tabular-nums">
+                      {formatWithCurrencySymbol(
+                        0,
+                        lines[0]?.stationId != null ? symbolByStationId.get(lines[0].stationId) : undefined,
+                      )}
+                    </span>
                   ) : (
-                    <div className="flex flex-col items-end gap-0.5">
-                      {[...localTotalsByCurrency.entries()].map(([code, amount]) => (
-                        <span key={code}>
-                          {formatWithCurrencySymbol(amount, symbolByCode.get(code) ?? code)}
-                        </span>
-                      ))}
-                    </div>
+                    [...localTotalsByCurrency.entries()].map(([code, amount]) => (
+                      <span key={code} className="text-xl font-bold text-red-800 tabular-nums">
+                        {formatWithCurrencySymbol(amount, symbolByCode.get(code) ?? code)}
+                      </span>
+                    ))
                   )}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums text-slate-600">—</td>
-                <td className="px-4 py-3 text-right font-bold tabular-nums text-slate-900">
-                  {formatCurrency(data?.totalCashOutUsd ?? grandTotalUsd, 'USD')}
-                </td>
-                {showStationColInTable ? <td className="px-4 py-3" /> : null}
-              </tr>
-            </tfoot>
-          )}
-        </table>
+                </div>
+                <p className="text-xl font-bold text-slate-900 tabular-nums">
+                  {formatCurrency(data?.totalCashOutUsd ?? grandTotalUsd, 'USD')}{' '}
+                  <span className="text-sm font-medium text-slate-600">USD total</span>
+                </p>
+              </div>
+              {!isManagementFilter && stationLabelForPdf ? (
+                <p className="mt-2 text-sm text-slate-500">Station: {stationLabelForPdf}</p>
+              ) : null}
+            </article>
+          </>
+        )}
       </div>
     </div>
   )

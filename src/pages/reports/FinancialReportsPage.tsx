@@ -1195,8 +1195,10 @@ export function FinancialReportsPage() {
     body.push(['Total liabilities', formatDecimal(bs.data.liabilities ?? 0)])
     body.push(['Equity', ''])
     for (const row of bs.data.equityAccounts ?? []) body.push([`${row.code} - ${row.name}`, formatDecimal(row.balance)])
-    body.push(['Total equity', formatDecimal(bs.data.equity ?? 0)])
-    body.push(['Total liabilities & equity', formatDecimal(bs.data.liabilitiesAndEquity ?? bs.data.liabilities + bs.data.equity)])
+    const bsNetIncome = Number(bs.data.netIncome ?? 0)
+    if (Math.abs(bsNetIncome) > 0.000001) body.push(['Net income (unclosed)', formatDecimal(bsNetIncome)])
+    body.push(['Total equity', formatDecimal((bs.data.equity ?? 0) + bsNetIncome)])
+    body.push(['Total liabilities & equity', formatDecimal(bs.data.liabilitiesAndEquity ?? bs.data.liabilities + bs.data.equity + bsNetIncome)])
     buildSimpleReportPdf(
       entryViewReportTitle('bs', financialEntryView ?? 'adjusted'),
       bsPeriodLabel,
@@ -1219,25 +1221,30 @@ export function FinancialReportsPage() {
       ])
     }
     const ni = Number(capital.data.netIncome ?? 0)
-    const equityCount = capital.data.equityRows?.length ?? 0
-    const unadjusted = view === 'unadjusted'
-    const showNiRow = unadjusted && (equityCount > 0 || Math.abs(ni) > 1e-9)
-    if (showNiRow) {
+    const showNiInTable = view !== 'postclosing'
+
+    for (const r of capital.data.drawingRows ?? []) {
+      body.push([
+        `${r.code} · ${r.name}`,
+        formatDecimalSigned(r.beginning),
+        formatDecimalSigned(r.change),
+        formatDecimalSigned(r.ending),
+      ])
+    }
+
+    if (showNiInTable && Math.abs(ni) > 1e-9) {
       body.push(['Net income (period)', formatDecimalSigned(0), formatDecimalSigned(ni), formatDecimalSigned(ni)])
     }
-    const totalBeg = capital.data.totalBeginning
-    const totalChg = unadjusted ? capital.data.totalChange + ni : capital.data.totalChange
-    const totalEnd = unadjusted ? capital.data.totalEnding + ni : capital.data.totalEnding
+
+    const totalBeg = Number(capital.data.totalBeginning ?? 0)
+    const totalChg = Number(capital.data.totalChange ?? 0) + (showNiInTable ? ni : 0)
+    const totalEnd = Number(capital.data.totalEnding ?? 0) + (showNiInTable ? ni : 0)
     body.push([
       'Total equity',
       formatDecimalSigned(totalBeg),
       formatDecimalSigned(totalChg),
       formatDecimalSigned(totalEnd),
     ])
-    if (!unadjusted) {
-      body.push(['', '', '', ''])
-      body.push(['Net income (period)', formatDecimalSigned(ni), '', ''])
-    }
     buildSimpleReportPdf(entryViewReportTitle('capital', view), plPeriodLabel, head, body)
   }
 
@@ -1363,7 +1370,9 @@ export function FinancialReportsPage() {
       for (const row of equityRows) {
         balanceSheetBody.push([`${row.code} - ${row.name}`, formatDecimal(row.balance)])
       }
-      balanceSheetBody.push(['Net Income', formatDecimal(pdfBsNetIncome)])
+      if (Math.abs(pdfBsNetIncome) > 0.000001) {
+        balanceSheetBody.push(['Net income (unclosed)', formatDecimal(pdfBsNetIncome)])
+      }
       balanceSheetBody.push(['Total Equity', formatDecimal(periodView.data.balanceSheet?.totalEquity ?? 0)])
       autoTable(doc, {
         startY: y,
@@ -2007,10 +2016,12 @@ export function FinancialReportsPage() {
                         <td className="px-4 py-2 font-semibold text-emerald-900">{formatDecimal(row.balance)}</td>
                       </tr>
                     ))}
-                    <tr className="border-t">
-                      <td className="px-4 py-2 font-bold text-green-600">Net Income</td>
-                      <td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodViewBsNetIncomeRow)}</td>
-                    </tr>
+                    {Math.abs(periodViewBsNetIncomeRow) > 0.000001 && (
+                      <tr className="border-t">
+                        <td className="px-4 py-2 font-bold text-green-600">Net income (unclosed)</td>
+                        <td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodViewBsNetIncomeRow)}</td>
+                      </tr>
+                    )}
                     <tr className="border-t">
                       <td className="px-4 py-2 font-bold text-slate-800">Total Equity</td>
                       <td className="px-4 py-2 font-bold text-emerald-900">{formatDecimal(periodView.data?.balanceSheet?.totalEquity ?? 0)}</td>
@@ -2306,7 +2317,10 @@ export function FinancialReportsPage() {
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold text-slate-900">Capital Statement</h1>
+          <p className="text-sm text-slate-500">Statement of Owner’s Equity</p>
+          </div>
           <button
             type="button"
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"

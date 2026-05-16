@@ -6,6 +6,7 @@ export function ExpenseReportPage() {
       expenseType="Expense"
       title="Expense report"
       tableTitle="Expenses"
+      pdfReportTitle="EXPENSE REPORT"
     />
   )
 }
@@ -16,6 +17,7 @@ export function ExchangeReportPage() {
       expenseType="Exchange"
       title="Exchange report"
       tableTitle="Exchange"
+      pdfReportTitle="EXCHANGE REPORT"
     />
   )
 }
@@ -26,6 +28,8 @@ export function CashOrUsdTakenReportPage() {
       expenseType="cashOrUsdTaken"
       title="Cash or USD Taken report"
       tableTitle="Cash or USD Taken"
+      pdfReportTitle="CASH OR USD TAKEN REPORT"
+      operationOfficeOnly
     />
   )
 }

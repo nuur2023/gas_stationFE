@@ -4,6 +4,8 @@ import { formatDecimalSigned } from '../../lib/formatNumber'
 /** Matches `FinancialReportsPage` URL `view` (avoid importing page → no circular deps). */
 export type CapitalStatementEntryView = 'adjusted' | 'unadjusted' | 'postclosing'
 
+const EPS = 1e-9
+
 function signedAmountClass(value: number): string {
   if (!Number.isFinite(value)) return 'text-slate-500'
   if (value > 0) return 'text-green-600'
@@ -17,7 +19,29 @@ function SignedAmountCell({ value }: { value: number }) {
   )
 }
 
-const EPS = 1e-9
+function EquityAccountRow({
+  row,
+}: {
+  row: { accountId: number; code: string; name: string; beginning: number; change: number; ending: number }
+}) {
+  return (
+    <tr className="hover:bg-slate-50/80">
+      <td className="px-4 py-2.5 text-slate-800">
+        <span className="font-mono text-xs text-slate-500">{row.code}</span>{' '}
+        <span className="text-slate-900">{row.name}</span>
+      </td>
+      <td className="px-4 py-2.5 text-right">
+        <SignedAmountCell value={row.beginning} />
+      </td>
+      <td className="px-4 py-2.5 text-right">
+        <SignedAmountCell value={row.change} />
+      </td>
+      <td className="px-4 py-2.5 text-right font-medium">
+        <SignedAmountCell value={row.ending} />
+      </td>
+    </tr>
+  )
+}
 
 export function CapitalStatementReportView({
   data,
@@ -30,7 +54,6 @@ export function CapitalStatementReportView({
   isLoading: boolean
   periodLabel: string
   documentHeading: string
-  /** When `unadjusted`, net income is shown as a table row and included in Total equity. */
   entryView?: CapitalStatementEntryView
 }) {
   if (isLoading) {
@@ -41,15 +64,20 @@ export function CapitalStatementReportView({
     return <p className="text-sm text-slate-600">No data for this period.</p>
   }
 
-  const rows = data.equityRows ?? []
+  const equityRows = data.equityRows ?? []
+  const drawingRows = data.drawingRows ?? []
   const netIncome = Number(data.netIncome ?? 0)
-  const showNetIncomeInTable = entryView === 'unadjusted'
-  const showNetIncomeRow =
-    showNetIncomeInTable && (rows.length > 0 || Math.abs(netIncome) > EPS)
-  const tableHasContent = rows.length > 0 || (showNetIncomeInTable && Math.abs(netIncome) > EPS)
-  const footerBeginning = data.totalBeginning
-  const footerChange = showNetIncomeInTable ? data.totalChange + netIncome : data.totalChange
-  const footerEnding = showNetIncomeInTable ? data.totalEnding + netIncome : data.totalEnding
+
+  const showNetIncomeRow = entryView === 'unadjusted' || entryView === 'adjusted'
+
+  const tableHasContent =
+    equityRows.length > 0 ||
+    drawingRows.length > 0 ||
+    (showNetIncomeRow && Math.abs(netIncome) > EPS)
+
+  const footerBeginning = Number(data.totalBeginning ?? 0)
+  const footerChange = Number(data.totalChange ?? 0) + (showNetIncomeRow ? netIncome : 0)
+  const footerEnding = Number(data.totalEnding ?? 0) + (showNetIncomeRow ? netIncome : 0)
 
   return (
     <div className="space-y-4">
@@ -76,24 +104,13 @@ export function CapitalStatementReportView({
               </tr>
             ) : (
               <>
-                {rows.map((r) => (
-                  <tr key={r.accountId} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-2.5 text-slate-800">
-                      <span className="font-mono text-xs text-slate-500">{r.code}</span>{' '}
-                      <span className="text-slate-900">{r.name}</span>
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      <SignedAmountCell value={r.beginning} />
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      <SignedAmountCell value={r.change} />
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-medium">
-                      <SignedAmountCell value={r.ending} />
-                    </td>
-                  </tr>
+                {equityRows.map((r) => (
+                  <EquityAccountRow key={r.accountId} row={r} />
                 ))}
-                {showNetIncomeRow ? (
+                {drawingRows.map((r) => (
+                  <EquityAccountRow key={r.accountId} row={r} />
+                ))}
+                {showNetIncomeRow && Math.abs(netIncome) > EPS ? (
                   <tr key="__net_income_period" className="bg-slate-50/50 hover:bg-slate-50/80">
                     <td className="px-4 py-2.5 text-slate-800">
                       <span className="text-slate-900 italic">Net income (period)</span>
@@ -131,25 +148,6 @@ export function CapitalStatementReportView({
           ) : null}
         </table>
       </div>
-      <p className="text-xs text-slate-500">
-        {showNetIncomeInTable ? (
-          <>
-            {/* <span className="font-medium text-slate-700">Unadjusted view:</span> net income for the period is included
-            in the table above and in <span className="font-medium text-slate-700">Total equity</span>. With period
-            closing entries, net income is usually reflected in equity account changes (e.g. retained earnings). */}
-          </>
-        ) : (
-          <>
-            {/* <span className="font-medium text-slate-700">Net income (period)</span> for the Income Statement in this
-            same date range:{' '}
-            <span className={`font-mono tabular-nums ${signedAmountClass(data.netIncome)}`}>
-              {formatDecimalSigned(data.netIncome)}
-            </span>
-            . With period closing entries, net income is usually reflected in equity account changes (e.g. retained
-            earnings). */}
-          </>
-        )}
-      </p>
     </div>
   )
 }

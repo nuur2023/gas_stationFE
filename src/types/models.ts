@@ -445,8 +445,8 @@ export interface JournalEntry {
   businessId: number
   userId: number
   stationId?: number | null
-  /** 0 Normal, 1 Adjusting, 2 Closing, 3 RecurringAuto */
-  entryKind?: number
+  /** Normal / Adjusting / Closing / RecurringAuto — API may send byte or camelCase enum string. */
+  entryKind?: number | string
   lines: JournalEntryLine[]
 }
 
@@ -478,6 +478,8 @@ export interface BalanceSheetReportDto {
   assets: number
   liabilities: number
   equity: number
+  /** Unclosed earnings plug; 0 when already in equity or post-closing view. */
+  netIncome?: number
   liabilitiesAndEquity: number
   assetAccounts: BalanceSheetAccountRow[]
   liabilityAccounts: BalanceSheetAccountRow[]
@@ -495,10 +497,16 @@ export interface CapitalStatementEquityRow {
 
 export interface CapitalStatementReportDto {
   equityRows: CapitalStatementEquityRow[]
+  /** Owner drawings accounts (32xx / name contains "drawing") with activity in the period. */
+  drawingRows?: CapitalStatementEquityRow[]
   totalBeginning: number
   totalChange: number
   totalEnding: number
   netIncome: number
+  /** Sum of [drawingRows] (legacy aggregate fields). */
+  drawingsBeginning: number
+  drawingsChange: number
+  drawingsEnding: number
 }
 
 export interface ReportPeriodViewDto {

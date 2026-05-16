@@ -14,7 +14,6 @@ import { CustomerFuelGivensPage } from './pages/operations/CustomerFuelGivensPag
 import { CustomerFuelGivenDetailsPage } from './pages/operations/CustomerFuelGivenDetailsPage'
 import { LiterReceivedsPage } from './pages/operations/LiterReceivedsPage'
 import { LiterReceivedReportPage } from './pages/reports/LiterReceivedReportPage'
-import { CashOutDailyReportPage } from './pages/reports/CashOutDailyReportPage'
 import { DailyCashSalesReportPage } from './pages/reports/DailyCashSalesReportPage'
 import { DailyFuelGivenReportPage } from './pages/reports/DailyFuelGivenReportPage'
 import { GeneratorUsageReportPage } from './pages/reports/GeneratorUsageReportPage'
@@ -143,7 +142,7 @@ export function App() {
               <Route path="liter-received" element={<LiterReceivedsPage />} />
               <Route path="reports/liter-received" element={<LiterReceivedReportPage />} />
               <Route path="reports/daily-cash-sales" element={<DailyCashSalesReportPage />} />
-              <Route path="reports/cash-out-daily" element={<CashOutDailyReportPage />} />
+              <Route path="reports/cash-out-daily" element={<Navigate to="/reports/expenses" replace />} />
               <Route path="reports/expenses" element={<ExpenseReportPage />} />
               <Route path="reports/exchange" element={<ExchangeReportPage />} />
               <Route path="reports/cash-usd-taken" element={<CashOrUsdTakenReportPage />} />

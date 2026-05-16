@@ -131,7 +131,6 @@ const FINANCIAL_REPORTS_CHILDREN: FlyoutItem[] = [
 const REPORTS_CHILDREN: FlyoutItem[] = [
   { to: '/reports/liter-received', label: 'Liter received', icon: FileText },
   { to: '/reports/daily-cash-sales', label: 'Daily cash sales report', icon: FileText },
-  { to: '/reports/cash-out-daily', label: 'Cash out daily', icon: FileText },
   { to: '/reports/expenses', label: 'Expense reports', icon: FileText },
   { to: '/reports/exchange', label: 'Exchange reports', icon: FileText },
   { to: '/reports/cash-usd-taken', label: 'Cash or USD Taken reports', icon: FileText },

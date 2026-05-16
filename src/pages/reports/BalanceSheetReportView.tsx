@@ -42,7 +42,10 @@ export function BalanceSheetReportView({
   const assetAccounts = data.assetAccounts ?? []
   const liabilityAccounts = data.liabilityAccounts ?? []
   const equityAccounts = data.equityAccounts ?? []
-  const outOfBalance = Math.abs(data.assets - (data.liabilitiesAndEquity ?? data.liabilities + data.equity)) > 0.000001
+  const netIncomePlug = Number(data.netIncome ?? 0)
+  const liabilitiesAndEquityTotal =
+    data.liabilitiesAndEquity ?? data.liabilities + data.equity + netIncomePlug
+  const outOfBalance = Math.abs(data.assets - liabilitiesAndEquityTotal) > 0.000001
 
   let rowIndex = 0
   const nextZebra = () => zebra(rowIndex++)
@@ -136,17 +139,23 @@ export function BalanceSheetReportView({
                 <td className="px-6 py-2 text-right tabular-nums text-slate-800">{formatDecimal(r.balance)}</td>
               </tr>
             ))}
+          {Math.abs(netIncomePlug) > 0.000001 && (
+            <tr className={nextZebra()}>
+              <td className="px-4 py-2 pl-12 font-medium text-green-700">Net income (unclosed)</td>
+              <td className="px-6 py-2 text-right tabular-nums font-medium text-green-800">{formatDecimal(netIncomePlug)}</td>
+            </tr>
+          )}
           <tr className={cn(nextZebra(), 'border-t border-slate-300')}>
             <td className="px-4 py-2.5 pl-8 font-semibold text-slate-900">Total equity</td>
             <td className="px-6 py-2.5 text-right text-base font-semibold tabular-nums text-slate-900">
-              {formatDecimal(data.equity ?? 0)}
+              {formatDecimal((data.equity ?? 0) + netIncomePlug)}
             </td>
           </tr>
 
           <tr className={cn(nextZebra(), 'border-t-2 border-slate-200 bg-slate-50/90')}>
             <td className="px-4 py-3 pl-8 font-semibold text-slate-900">Total liabilities &amp; equity</td>
             <td className="px-6 py-3 text-right text-base font-bold tabular-nums text-slate-900">
-              {formatDecimal(data.liabilitiesAndEquity ?? data.liabilities + data.equity)}
+              {formatDecimal(liabilitiesAndEquityTotal)}
             </td>
           </tr>
 
@@ -154,7 +163,7 @@ export function BalanceSheetReportView({
             <tr className={cn(zebra(rowIndex), 'bg-amber-50')}>
               <td colSpan={2} className="px-6 py-3 text-center text-sm font-medium text-amber-900">
                 Assets and liabilities + equity differ by{' '}
-                {formatDecimal(data.assets - (data.liabilitiesAndEquity ?? data.liabilities + data.equity))}. Check journal entries.
+                {formatDecimal(data.assets - liabilitiesAndEquityTotal)}. Check journal entries.
               </td>
             </tr>
           )}
