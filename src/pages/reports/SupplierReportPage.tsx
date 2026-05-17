@@ -88,7 +88,7 @@ export function SupplierReportPage() {
     const sideMargin = 36
     autoTable(doc, {
       startY: 128,
-      head: [['Description', 'Liters', 'Charged', 'Paid', 'Balance', 'Date', 'Action']],
+      head: [['Description', 'Liters', 'Charged', 'Paid', 'Balance', 'Date']],
       body: d.rows.map((r) => [
         r.description,
         r.liters != null ? formatDecimal(r.liters) : '—',
@@ -96,15 +96,13 @@ export function SupplierReportPage() {
         r.paid > 0 ? `$${formatDecimal(r.paid)}` : '—',
         `$${formatDecimal(r.balance)}`,
         r.date,
-        r.purchaseId != null ? 'View purchase' : '—',
       ]),
       foot: [
         [
-          { content: 'Balance', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold' } },
+          { content: 'Balance', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } },
           formatDecimal(d.totalCharged),
           `$${formatDecimal(d.totalPaid)}`,
           `$${formatDecimal(d.balance)}`,
-          '',
           '',
         ],
       ],

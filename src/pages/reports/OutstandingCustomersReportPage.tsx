@@ -89,8 +89,26 @@ export function OutstandingCustomersReportPage() {
   const totalOutstanding = useMemo(() => rows.reduce((s, r) => s + r.balance, 0), [rows])
   const colCount = showStationCol ? 5 : 4
 
-  const businessLabel =
-    (businessesData?.items ?? []).find((b) => b.id === effectiveBusinessId)?.name?.trim() || 'Business'
+  const pdfHeaderStationName = useMemo(() => {
+    const scopedStationId = showStationPicker
+      ? superStationId != null && superStationId > 0
+        ? superStationId
+        : null
+      : effectiveStationId != null && effectiveStationId > 0
+        ? effectiveStationId
+        : null
+
+    if (scopedStationId != null) {
+      return stationNameById.get(scopedStationId)?.trim() || `Station #${scopedStationId}`
+    }
+
+    const stationIds = [...new Set(rows.map((r) => r.stationId).filter((id) => id > 0))]
+    if (stationIds.length === 1) {
+      return stationNameById.get(stationIds[0]!)?.trim() || `Station #${stationIds[0]}`
+    }
+    if (stationIds.length > 1) return 'All stations'
+    return 'Station'
+  }, [showStationPicker, superStationId, effectiveStationId, stationNameById, rows])
 
   function downloadPdf() {
     if (rows.length === 0) return
@@ -101,7 +119,7 @@ export function OutstandingCustomersReportPage() {
     doc.setTextColor(255, 255, 255)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(26)
-    doc.text(businessLabel.toUpperCase(), pageW / 2, 36, { align: 'center' })
+    doc.text(pdfHeaderStationName.toUpperCase(), pageW / 2, 36, { align: 'center' })
     doc.setFontSize(14)
     doc.text('OUTSTANDING CUSTOMERS', pageW / 2, 62, { align: 'center' })
     doc.setFont('helvetica', 'normal')
